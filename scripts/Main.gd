@@ -27,6 +27,22 @@ const C_PLAYER_BAR := Color(0.20, 0.75, 0.25)
 const C_AI_BAR := Color(0.85, 0.20, 0.20)
 const C_ERROR := Color(0.80, 0.10, 0.10)
 
+# ---------------------------------------------------------------------------
+# Fonte de código (JetBrains Mono Nerd Font, com fallback)
+# ---------------------------------------------------------------------------
+# Se um arquivo .ttf/.otf da JetBrains Mono Nerd Font for colocado nesse
+# caminho, ele é usado com prioridade (visual idêntico ao original). Caso
+# contrário, caímos num SystemFont que procura a fonte já instalada no
+# computador e, se não encontrar, usa a melhor alternativa monoespaçada
+# disponível no sistema.
+const CODE_FONT_TTF_PATH := "res://assets/fonts/JetBrainsMonoNerdFont-Regular.ttf"
+const CODE_FONT_SYSTEM_NAMES := [
+	"JetBrainsMono Nerd Font", "JetBrains Mono Nerd Font", "JetBrainsMono NFM",
+	"JetBrains Mono", "Cascadia Code", "Fira Code", "Consolas",
+	"Source Code Pro", "Courier New", "monospace"
+]
+var _code_font: Font
+
 var state: State = State.BOOT
 
 # Referências construídas em tempo de execução.
@@ -38,7 +54,7 @@ var email_icon_flash: bool = false
 
 # --- Variáveis da corrida (race) ---
 var race_code: String = ""
-var race_input: TextEdit
+var race_input: CodeEdit
 var race_target_label: RichTextLabel
 var race_player_bar: ProgressBar
 var race_ai_bar: ProgressBar
@@ -61,6 +77,28 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if race_active and not race_finished:
 		_update_ai_progress(delta)
+
+
+# ---------------------------------------------------------------------------
+# FONTE DE CÓDIGO
+# ---------------------------------------------------------------------------
+func _get_code_font() -> Font:
+	if _code_font:
+		return _code_font
+
+	if ResourceLoader.exists(CODE_FONT_TTF_PATH):
+		# Arquivo real da JetBrains Mono Nerd Font presente em
+		# assets/fonts -> usa ele.
+		_code_font = load(CODE_FONT_TTF_PATH)
+	else:
+		# Sem arquivo bundlado: usa a JetBrains Mono Nerd Font do sistema
+		# operacional, se estiver instalada, com fallback pra outras fontes
+		# monoespaçadas.
+		var sys_font := SystemFont.new()
+		sys_font.font_names = PackedStringArray(CODE_FONT_SYSTEM_NAMES)
+		_code_font = sys_font
+
+	return _code_font
 
 
 # ---------------------------------------------------------------------------
@@ -458,11 +496,19 @@ func _open_editor() -> void:
 	vbox.add_child(instructions)
 
 	# Painel com o código de referência
+	# Fonte de código, usada tanto no painel de referência quanto no campo
+	# de digitação, pra dar aquele visual de editor "de verdade".
+	var code_font := _get_code_font()
+
 	race_target_label = RichTextLabel.new()
 	race_target_label.bbcode_enabled = true
 	race_target_label.custom_minimum_size = Vector2(720, 130)
 	race_target_label.scroll_active = false
 	race_target_label.add_theme_color_override("default_color", C_TEXT_DARK)
+	race_target_label.add_theme_font_override("normal_font", code_font)
+	race_target_label.add_theme_font_override("mono_font", code_font)
+	race_target_label.add_theme_font_size_override("normal_font_size", 15)
+	race_target_label.add_theme_font_size_override("mono_font_size", 15)
 	var target_bg := StyleBoxFlat.new()
 	target_bg.bg_color = Color(1, 1, 1)
 	target_bg.border_width_left = 1
@@ -478,10 +524,39 @@ func _open_editor() -> void:
 	input_label.add_theme_color_override("font_color", C_TEXT_DARK)
 	vbox.add_child(input_label)
 
-	race_input = TextEdit.new()
+	# Usamos CodeEdit em vez de TextEdit: as propriedades de indentação
+	# (indent_use_spaces, indent_size, indent_automatic) só existem na classe
+	# CodeEdit — é a mesma classe usada pelo editor de script do próprio
+	# Godot, então é a escolha certa para uma área de "escrever código".
+	race_input = CodeEdit.new()
 	race_input.custom_minimum_size = Vector2(720, 110)
 	race_input.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
 	race_input.text = ""
+	race_input.add_theme_font_override("font", code_font)
+	race_input.add_theme_font_size_override("font_size", 15)
+	# --- Correção do TAB ---
+	# O código de referência usa espaços para indentação (4 por nível). Por
+	# padrão, o editor insere um caractere de tabulação real ao pressionar
+	# TAB, o que nunca bate com o texto esperado e trava o progresso. Com
+	# "indent_use_spaces" ligado e "indent_size" = 4, o TAB passa a inserir
+	# exatamente 4 espaços — o mesmo resultado de apertar espaço 4 vezes — e
+	# a corrida reconhece a indentação corretamente. "indent_automatic" fica
+	# desligado para o editor não adicionar espaços extras sozinho (o que
+	# bagunçaria a comparação com o código alvo).
+	race_input.indent_use_spaces = true
+	race_input.indent_size = 4
+	race_input.indent_automatic = false
+	# CodeEdit vem por padrão com recursos extras (gutter de números de
+	# linha, autocomplete etc.). Desligamos tudo isso pra manter a mesma
+	# cara simples que o TextEdit original tinha.
+	race_input.gutters_draw_line_numbers = false
+	race_input.gutters_draw_fold_gutter = false
+	race_input.gutters_draw_breakpoints_gutter = false
+	race_input.gutters_draw_bookmarks = false
+	race_input.gutters_draw_executing_lines = false
+	race_input.code_completion_enabled = false
+	race_input.highlight_current_line = false
+	race_input.draw_tabs = false
 	vbox.add_child(race_input)
 	race_input.text_changed.connect(_on_race_text_changed)
 
