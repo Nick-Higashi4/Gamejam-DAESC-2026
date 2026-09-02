@@ -1,0 +1,9 @@
+78098b89c88a74ebe8c20117b8754620
+::res://::1788311901
+icon.svg::CompressedTexture2D::6843690023017277530::1788240334::1788311903::1::::<><><>0<>0<>8458540f5e6f18e4f77fa25cb1756383<>res://.godot/imported/icon.svg-218a8f2b3041327d8a5756f3a245f83b.ctex::
+README.md::TextFile::-1::1788240334::0::1::::<><><>0<>0<><>::
+::res://scenes/::1788311842
+Main.tscn::PackedScene::-1::1788240334::0::1::::<><><>0<>0<><>::res://scripts/Main.gd
+::res://scripts/::1788311842
+GameManager.gd::GDScript::4517621895931227375::1788240334::0::1::::<>Node<><>0<>0<><>::
+Main.gd::GDScript::8017100089155733904::1788240334::0::1::::<>Control<><>0<>0<><>::
