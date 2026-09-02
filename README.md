@@ -1,5 +1,12 @@
 # Code Warrior: Humano vs IA
 
+- Danilo Moreira
+- Eduardo Tadra Mainjinski
+- Evelyn Carolina Massuline
+- Fábio Luiz da Silva Jr
+- Nícolas Higashi
+- Vitor Inácio Borges
+
 Protótipo jogável feito em **Godot Engine 4.3+** (GDScript). Você é um
 programador cuja empresa contratou a IA "CodeBot-3000". Ao longo de 5 dias
 de trabalho, você precisa vencer corridas de digitação de código
