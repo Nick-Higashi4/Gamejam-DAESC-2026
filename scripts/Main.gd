@@ -56,6 +56,31 @@ const C_UNREAD := Color(0.75, 0.10, 0.10)
 const C_SELECTED_ITEM := Color(0.43, 0.43, 0.42)
 const C_SELECTED_ITEM_UNREAD_TEXT := Color(1.0, 0.55, 0.45)
 
+# =====================================================================
+# 1) No topo do Main.gd, junto dos outros caminhos de assets
+# =====================================================================
+
+# Imagens possíveis pra "janela falsa" de sabotagem (pop-up de vírus/spam
+# genérico). Se houver mais de uma, sorteamos entre elas pra dar variedade;
+# se nenhuma existir ainda, cai num pop-up só de texto (sem erro).
+const FAKE_WINDOW_IMAGE_PATHS := [
+	"res://assets/images/sabotagem1.jpg",
+	"res://assets/images/sabotagem2.jpg",
+	"res://assets/images/sabotagem3.jpg",
+	"res://assets/images/sabotagem4.jpg",
+	"res://assets/images/sabotagem5.jpg",
+	"res://assets/images/sabotagem6.jpg",
+	"res://assets/images/sabotagem7.jpg",
+	"res://assets/images/sabotagem8.jpg",
+	"res://assets/images/sabotagem9.jpg",
+	"res://assets/images/sabotagem10.jpg",
+]
+
+var _sabotage: SabotageManager
+# Guarda as janelas falsas abertas no momento, pra poder fechar todas de
+# uma vez quando a corrida terminar (ver _finish_race / fechamento manual).
+var _open_sabotage_windows: Array[Control] = []
+
 # ---------------------------------------------------------------------------
 # Som de notificação (aviso de nova mensagem)
 # ---------------------------------------------------------------------------
@@ -161,6 +186,7 @@ var race_last_ai_time: float = 0.0
 var race_last_had_ai: bool = false
 
 
+
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	custom_minimum_size = Vector2(1280, 720)
@@ -171,6 +197,9 @@ func _ready() -> void:
 	_menu_music_player = AudioStreamPlayer.new()
 	add_child(_menu_music_player)
 	_menu_music_player.finished.connect(_on_menu_music_finished)
+	_sabotage = SabotageManager.new()
+	add_child(_sabotage)
+	_sabotage.popup_requested.connect(_on_sabotage_popup_requested)
 	_build_monitor_frame()
 	_show_main_menu()
 
@@ -1087,6 +1116,68 @@ func _render_email_window(selected_index: int) -> void:
 		state = State.DESKTOP
 	)
 
+func _on_sabotage_popup_requested(kind: String, _payload: Dictionary) -> void:
+	if kind == "video":
+		return # ainda não implementado - próximo passo
+	_show_sabotage_fake_window()
+
+
+func _show_sabotage_fake_window() -> void:
+	var win_size := Vector2(320, 200)
+	var built := _make_window("Aviso do Sistema", win_size)
+	var win: Control = built["window"]
+	var content: Control = built["content"]
+	_play_notification_sound()
+
+	# Posição aleatória dentro da tela (em vez do centro padrão de
+	# _make_window), com uma margem pra não nascer cortada nas bordas.
+	var max_x: float = max(screen.size.x - win_size.x - 8, 8)
+	var max_y: float = max(screen.size.y - win_size.y - 8, 8)
+	win.position = Vector2(randf_range(8, max_x), randf_range(8, max_y))
+
+	var img_path := _pick_random_fake_window_image()
+	if img_path != "":
+		var tex_rect := TextureRect.new()
+		tex_rect.texture = load(img_path)
+		tex_rect.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+		tex_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tex_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+		content.add_child(tex_rect)
+	else:
+		# Sem imagem definitiva ainda: fallback só com texto, sem travar
+		# o desenvolvimento - basta colocar os arquivos em
+		# FAKE_WINDOW_IMAGE_PATHS quando estiverem prontos.
+		var lbl := Label.new()
+		lbl.text = "⚠ Seu sistema está em risco!\nClique aqui para verificar."
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+		lbl.add_theme_color_override("font_color", C_TEXT_DARK)
+		lbl.set_anchors_preset(Control.PRESET_FULL_RECT)
+		content.add_child(lbl)
+
+	_open_sabotage_windows.append(win)
+	built["close_button"].pressed.connect(func():
+		_open_sabotage_windows.erase(win)
+		win.queue_free()
+	)
+
+
+func _pick_random_fake_window_image() -> String:
+	var available: Array = []
+	for p in FAKE_WINDOW_IMAGE_PATHS:
+		if ResourceLoader.exists(p):
+			available.append(p)
+	if available.is_empty():
+		return ""
+	return available[randi() % available.size()]
+
+
+func _close_all_sabotage_windows() -> void:
+	for w in _open_sabotage_windows:
+		if is_instance_valid(w):
+			w.queue_free()
+	_open_sabotage_windows.clear()
 
 func _try_open_editor() -> void:
 	if GameManager.has_unread_email():
@@ -1279,15 +1370,20 @@ func _open_editor() -> void:
 	race_status_label.add_theme_color_override("font_color", C_TEXT_DARK)
 	vbox.add_child(race_status_label)
 
+
 	var win: Control = built["window"]
 	built["close_button"].pressed.connect(func():
 		race_active = false
+		_sabotage.stop()
+		_close_all_sabotage_windows()
 		win.queue_free()
 		state = State.DESKTOP
 	)
+	
 
 	_refresh_target_display("")
 	race_active = true
+	_sabotage.start(GameManager.current_day)
 	race_input.grab_focus()
 
 
@@ -1435,6 +1531,8 @@ func _finish_race() -> void:
 	race_finished = true
 	race_active = false
 	race_input.editable = false
+	_sabotage.stop()
+	_close_all_sabotage_windows()
 
 	var cfg: Dictionary = GameManager.get_current_config()
 	var target_time := _target_time_seconds(race_code)

@@ -174,6 +174,11 @@ var day_configs: Array = [
 				"from": "NeuralCode Inc. <updates@neuralcode.ai>",
 				"subject": "Atualização disponível: ChatBot-3000",
 				"body": "Chegou a ChatBot-3000!\n\nMais uma rodada de otimizações de velocidade e uma redução adicional na taxa de erros. A atualização já está ativa no ambiente da CodeCorp.\n\nEquipe NeuralCode."
+			},
+			{
+				"from": "Adam Ruting <aruting_business@ASCC.IA>",
+				"subject": "Aviso...",
+				"body": "Essa IA é perversa...\n\nEla não quer concorrer com ninguém e\nvai fazer qualquer coisa para acabar com você..."
 			}
 		],
 		"ai_active": true,
