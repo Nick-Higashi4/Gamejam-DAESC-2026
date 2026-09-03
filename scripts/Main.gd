@@ -8,7 +8,7 @@ extends Control
 ##   BOOT -> DESKTOP -> EMAIL (recado do chefe) -> RACE (typeracer) ->
 ##   RESULT (venceu/perdeu) -> volta pro DESKTOP, ou FIRED / VICTORY no fim.
 
-enum State { BOOT, DESKTOP, EMAIL, RACE, RESULT, FIRED, VICTORY }
+enum State { MENU, CONFIG_MENU, BOOT, DESKTOP, EMAIL, RACE, RESULT, FIRED, VICTORY }
 
 # ---------------------------------------------------------------------------
 # Paleta "Windows XP"
@@ -43,12 +43,13 @@ const CODE_FONT_SYSTEM_NAMES := [
 ]
 var _code_font: Font
 
-var state: State = State.BOOT
+var state: State = State.MENU
 
 # Referências construídas em tempo de execução.
 var screen: Control
 var desktop_layer: Control
 var window_layer: Control
+var transition_layer: Control
 var taskbar_clock: Label
 var email_icon_flash: bool = false
 
@@ -71,7 +72,7 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	custom_minimum_size = Vector2(1280, 720)
 	_build_monitor_frame()
-	_show_boot_sequence()
+	_show_main_menu()
 
 
 func _process(delta: float) -> void:
@@ -138,7 +139,179 @@ func _build_monitor_frame() -> void:
 	vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	screen.add_child(vignette)
 
+	# Camada de transição: fica dentro do mesmo "bezel", por cima da "screen"
+	# (mesmo recorte/tamanho), mas é uma IRMÃ da screen, não uma filha dela.
+	# Isso é de propósito: várias funções (ex.: _build_desktop, _show_main_menu)
+	# limpam TODOS os filhos de "screen" quando trocam de tela. Se o overlay
+	# de transição fosse filho de "screen", ele seria apagado no meio da
+	# própria animação. Ficando fora de "screen", ele sobrevive a qualquer
+	# troca de estado.
+	transition_layer = Control.new()
+	transition_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	transition_layer.offset_left = 36
+	transition_layer.offset_top = 36
+	transition_layer.offset_right = -36
+	transition_layer.offset_bottom = -70
+	transition_layer.clip_contents = true
+	transition_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bezel.add_child(transition_layer)
 
+
+# ---------------------------------------------------------------------------
+# MENU PRINCIPAL
+# ---------------------------------------------------------------------------
+func _show_main_menu() -> void:
+	state = State.MENU
+	for c in screen.get_children():
+		c.queue_free()
+
+	var bg := ColorRect.new()
+	bg.color = C_DESKTOP.darkened(0.45)
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	screen.add_child(bg)
+
+	var vbox := VBoxContainer.new()
+	vbox.custom_minimum_size = Vector2(320, 0)
+	vbox.position = Vector2(screen.size.x / 2.0 - 160, screen.size.y / 2.0 - 140)
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_theme_constant_override("separation", 18)
+	screen.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "CODE WARRIOR\nHumano vs IA"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 30)
+	title.add_theme_color_override("font_color", Color(1, 1, 1))
+	title.custom_minimum_size = Vector2(320, 0)
+	vbox.add_child(title)
+
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0, 12)
+	vbox.add_child(spacer)
+
+	var start_btn := _make_menu_button("START")
+	start_btn.pressed.connect(_on_menu_start_pressed)
+	vbox.add_child(start_btn)
+
+	var config_btn := _make_menu_button("CONFIG")
+	config_btn.pressed.connect(_show_config_menu)
+	vbox.add_child(config_btn)
+
+	var exit_btn := _make_menu_button("EXIT")
+	exit_btn.pressed.connect(func(): get_tree().quit())
+	vbox.add_child(exit_btn)
+
+
+func _make_menu_button(label_text: String) -> Button:
+	var btn := Button.new()
+	btn.text = label_text
+	btn.custom_minimum_size = Vector2(240, 46)
+	btn.add_theme_font_size_override("font_size", 18)
+	return btn
+
+
+# ---------------------------------------------------------------------------
+# MENU DE CONFIGURAÇÕES
+# ---------------------------------------------------------------------------
+# Por enquanto só tem o botão de voltar. No futuro, novas opções (volume,
+# dificuldade, fonte, etc.) entram aqui dentro do vbox, sem precisar mexer
+# no menu principal.
+func _show_config_menu() -> void:
+	state = State.CONFIG_MENU
+	for c in screen.get_children():
+		c.queue_free()
+
+	var bg := ColorRect.new()
+	bg.color = C_DESKTOP.darkened(0.45)
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	screen.add_child(bg)
+
+	var vbox := VBoxContainer.new()
+	vbox.custom_minimum_size = Vector2(320, 0)
+	vbox.position = Vector2(screen.size.x / 2.0 - 160, screen.size.y / 2.0 - 100)
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_theme_constant_override("separation", 18)
+	screen.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "CONFIGURAÇÕES"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 26)
+	title.add_theme_color_override("font_color", Color(1, 1, 1))
+	title.custom_minimum_size = Vector2(320, 0)
+	vbox.add_child(title)
+
+	var placeholder := Label.new()
+	placeholder.text = "(em breve)"
+	placeholder.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	placeholder.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
+	placeholder.custom_minimum_size = Vector2(320, 0)
+	vbox.add_child(placeholder)
+
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0, 6)
+	vbox.add_child(spacer)
+
+	var back_btn := _make_menu_button("RETURN")
+	back_btn.pressed.connect(_show_main_menu)
+	vbox.add_child(back_btn)
+
+
+func _on_menu_start_pressed() -> void:
+	var cfg: Dictionary = GameManager.get_current_config()
+	_play_day_transition(cfg["title"], func():
+		_build_desktop()
+	)
+
+
+# ---------------------------------------------------------------------------
+# TRANSIÇÃO DE DIA (tela preta com o título do dia -> some revelando o monitor)
+# ---------------------------------------------------------------------------
+# 1) um overlay preto cobre a tela (fade-in do preto)
+# 2) o texto do dia aparece por cima
+# 3) segura um instante pro jogador ler
+# 4) por trás do overlay (ainda opaco), troca o conteúdo da tela via
+#    "on_fully_covered" (ex.: construir o desktop)
+# 5) o overlay (preto + texto) desaparece suavemente, revelando o que foi
+#    construído no passo 4
+func _play_day_transition(day_text: String, on_fully_covered: Callable) -> void:
+	var overlay := ColorRect.new()
+	overlay.color = Color(0, 0, 0, 0)
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	transition_layer.add_child(overlay)
+
+	var day_label := Label.new()
+	day_label.text = day_text
+	day_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	day_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	day_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	day_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	day_label.add_theme_font_size_override("font_size", 34)
+	day_label.add_theme_color_override("font_color", Color(1, 1, 1))
+	day_label.modulate = Color(1, 1, 1, 0)
+	overlay.add_child(day_label)
+
+	var tween := create_tween()
+	# fade pro preto
+	tween.tween_property(overlay, "color:a", 1.0, 0.35)
+	# texto do dia surge
+	tween.tween_property(day_label, "modulate:a", 1.0, 0.45)
+	# segura a tela preta com o texto por um instante
+	tween.tween_interval(0.9)
+	# troca o conteúdo da "screen" por trás do overlay (que está numa camada
+	# separada, então não é afetado pela limpeza de filhos que essas funções
+	# fazem em "screen")
+	tween.tween_callback(on_fully_covered)
+	# o texto some rápido, e o preto todo se dissolve revelando a tela nova
+	tween.tween_property(day_label, "modulate:a", 0.0, 0.25)
+	tween.parallel().tween_property(overlay, "color:a", 0.0, 0.7)
+	tween.tween_callback(overlay.queue_free)
+
+
+# Sem uso direto no fluxo atual (o START agora vai direto pra transição de
+# dia + desktop). Deixei a função aqui caso você queira reaproveitar esse
+# efeito de "boot" em algum outro ponto do jogo.
 func _show_boot_sequence() -> void:
 	state = State.BOOT
 	var boot_label := Label.new()
@@ -756,7 +929,10 @@ func _show_result(player_won: bool) -> void:
 		btn.text = "Continuar para o próximo dia"
 		btn.pressed.connect(func():
 			win.queue_free()
-			_build_desktop()
+			var cfg: Dictionary = GameManager.get_current_config()
+			_play_day_transition(cfg["title"], func():
+				_build_desktop()
+			)
 		)
 	else:
 		btn.text = "Tentar novamente"

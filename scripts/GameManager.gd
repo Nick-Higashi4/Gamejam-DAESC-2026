@@ -20,7 +20,7 @@ var email_read_today: bool = false
 var day_configs: Array = [
 	{
 		"day": 1,
-		"title": "Dia 1 - Aquecimento",
+		"title": "Dia 1 - TUTORIAL",
 		"boss_intro": "Bom dia. A partir de hoje você será testado contra a nossa nova assistente, a CodeBot-3000. Vamos ver do que você é capaz. Comece com algo simples.",
 		"boss_win": "Nada mal para o primeiro dia. Mas isso foi só o aquecimento.",
 		"boss_lose": "Hmm... a IA foi mais rápida dessa vez. Ainda é cedo, mas fique atento.",

@@ -33,8 +33,8 @@ tudo é código puro, fácil de ler e de modificar.
 project.godot          -> configuração do projeto (autoload, tela, etc.)
 scenes/Main.tscn        -> cena raiz (praticamente vazia, só o root com o script)
 scripts/GameManager.gd  -> autoload/singleton: estado da campanha (dia atual,
-                            avisos/strikes) e os dados de cada um dos 5 dias
-                            (código a digitar, velocidade da IA, falas do chefe)
+							avisos/strikes) e os dados de cada um dos 5 dias
+							(código a digitar, velocidade da IA, falas do chefe)
 scripts/Main.gd         -> toda a lógica de UI e do puzzle da corrida
 ```
 
