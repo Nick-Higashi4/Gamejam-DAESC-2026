@@ -34,7 +34,7 @@ extends Control
 ##   (GameManager.MAX_LOSSES = 1) - a tela de demissão é propositalmente
 ##   simples por enquanto.
 
-enum State { MENU, CONFIG_MENU, BOOT, DESKTOP, EMAIL, RACE, RESULT, FIRED, VICTORY }
+enum State { MENU, CONFIG_MENU, BOOT, DESKTOP, EMAIL, RACE, RESULT, FIRED, VICTORY, QUIT }
 
 # ---------------------------------------------------------------------------
 # Paleta "Windows XP"
@@ -99,6 +99,13 @@ const NOTIFICATION_SOUND_PATH := "res://assets/sfx/notification.wav"
 const CLICK_SOUND_PATH := "res://assets/sfx/click.wav"
 
 # ---------------------------------------------------------------------------
+# Som de boot (computador/sistema antigo ligando) - toca ao abrir a tela de
+# inicialização do "Bricks", logo após clicar em START. Se o arquivo ainda
+# não existir, a sequência de boot roda normalmente, só sem som.
+# ---------------------------------------------------------------------------
+const BOOT_SOUND_PATH := "res://assets/sfx/boot.wav"
+
+# ---------------------------------------------------------------------------
 # Música do menu principal - toca em loop enquanto o jogador está no MENU ou
 # no CONFIG_MENU, e some com um fade curto assim que a campanha começa. Se o
 # arquivo ainda não existir, o jogo simplesmente fica em silêncio.
@@ -150,6 +157,19 @@ var email_badge: Control
 var _notification_player: AudioStreamPlayer
 var _click_player: AudioStreamPlayer
 var _menu_music_player: AudioStreamPlayer
+var _boot_player: AudioStreamPlayer
+
+# --- Personalização da área de trabalho (ícones) ---
+# Posições customizadas (o jogador pode arrastar os ícones livremente).
+# Guardadas por icon_id, persistem entre a troca de dias dentro da mesma
+# partida; são limpas em _reset_desktop_customizations() (novo jogo).
+var _icon_positions: Dictionary = {}
+# Se o jogador arrastar a "Caixa de E-mail" ou o "Editor de Código" para a
+# lixeira e confirmar, o ícone correspondente é removido em definitivo (ver
+# _delete_desktop_icon) e o jogo vai direto pra tela de "Você se demitiu".
+var _email_icon_deleted: bool = false
+var _editor_icon_deleted: bool = false
+var _trash_icon_box: Control = null
 
 # --- Variáveis da corrida (race) ---
 var race_code: String = ""
@@ -197,6 +217,8 @@ func _ready() -> void:
 	_menu_music_player = AudioStreamPlayer.new()
 	add_child(_menu_music_player)
 	_menu_music_player.finished.connect(_on_menu_music_finished)
+	_boot_player = AudioStreamPlayer.new()
+	add_child(_boot_player)
 	_sabotage = SabotageManager.new()
 	add_child(_sabotage)
 	_sabotage.popup_requested.connect(_on_sabotage_popup_requested)
@@ -467,9 +489,16 @@ func _show_config_menu() -> void:
 
 func _on_menu_start_pressed() -> void:
 	_stop_menu_music()
-	var cfg: Dictionary = GameManager.get_current_config()
-	_play_day_transition_for_cfg(cfg, func():
-		_build_desktop()
+	# 1) transição (fade pro preto) saindo do menu; 2) tela de boot do
+	# "Bricks" carregando de verdade; 3) só quando o boot termina, a
+	# transição de "Dia 0" e a área de trabalho aparecem.
+	_play_multi_text_transition([], func():
+		_play_boot_sequence(func():
+			var cfg: Dictionary = GameManager.get_current_config()
+			_play_day_transition_for_cfg(cfg, func():
+				_build_desktop()
+			)
+		)
 	)
 
 
@@ -541,25 +570,90 @@ func _play_day_transition_for_cfg(cfg: Dictionary, on_fully_covered: Callable) -
 	_play_multi_text_transition(texts, on_fully_covered)
 
 
-# Sem uso direto no fluxo atual (o START agora vai direto pra transição de
-# dia + desktop). Deixei a função aqui caso você queira reaproveitar esse
-# efeito de "boot" em algum outro ponto do jogo.
-func _show_boot_sequence() -> void:
+# ---------------------------------------------------------------------------
+# SEQUÊNCIA DE BOOT ("Bricks" - o sistema operacional do jogo)
+# ---------------------------------------------------------------------------
+# Tela cheia preta com o logo do "Bricks" e uma barra de carregamento real:
+# o "on_complete" só é chamado quando a barra termina de encher (ou seja, só
+# depois que o "sistema operacional" termina de carregar de verdade) - nunca
+# antes disso.
+func _play_boot_sequence(on_complete: Callable) -> void:
 	state = State.BOOT
-	var boot_label := Label.new()
-	boot_label.text = "Iniciando sistema...\n\nCodeCorp OS v2001"
-	boot_label.add_theme_color_override("font_color", Color(0.8, 0.9, 1.0))
-	boot_label.add_theme_font_size_override("font_size", 22)
-	boot_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	boot_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	boot_label.set_anchors_preset(Control.PRESET_FULL_RECT)
-	screen.add_child(boot_label)
+	for c in screen.get_children():
+		c.queue_free()
 
-	var t := get_tree().create_timer(1.6)
-	t.timeout.connect(func():
-		boot_label.queue_free()
-		_build_desktop()
-	)
+	var bg := ColorRect.new()
+	bg.color = Color(0, 0, 0)
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	screen.add_child(bg)
+
+	var vbox := VBoxContainer.new()
+	vbox.custom_minimum_size = Vector2(320, 0)
+	vbox.position = Vector2(screen.size.x / 2.0 - 160, screen.size.y / 2.0 - 40)
+	vbox.add_theme_constant_override("separation", 14)
+	vbox.modulate = Color(1, 1, 1, 0)
+	screen.add_child(vbox)
+
+	var logo := Label.new()
+	logo.text = "BRICKS"
+	logo.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	logo.add_theme_font_size_override("font_size", 36)
+	logo.add_theme_color_override("font_color", Color(0.85, 0.92, 1.0))
+	logo.custom_minimum_size = Vector2(320, 0)
+	vbox.add_child(logo)
+
+	var sub := Label.new()
+	sub.text = "sistema operacional"
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub.add_theme_color_override("font_color", Color(0.6, 0.7, 0.85))
+	vbox.add_child(sub)
+	sub.custom_minimum_size = Vector2(320, 0)
+
+	var bar_spacer := Control.new()
+	bar_spacer.custom_minimum_size = Vector2(0, 10)
+	vbox.add_child(bar_spacer)
+
+	var bar := ProgressBar.new()
+	bar.min_value = 0
+	bar.max_value = 100
+	bar.value = 0
+	bar.show_percentage = false
+	bar.custom_minimum_size = Vector2(320, 14)
+	var bar_bg := StyleBoxFlat.new()
+	bar_bg.bg_color = Color(0.15, 0.16, 0.2)
+	bar.add_theme_stylebox_override("background", bar_bg)
+	var bar_fill := StyleBoxFlat.new()
+	bar_fill.bg_color = Color(0.35, 0.65, 1.0)
+	bar.add_theme_stylebox_override("fill", bar_fill)
+	vbox.add_child(bar)
+
+	var status := Label.new()
+	status.text = "Carregando..."
+	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	status.add_theme_color_override("font_color", Color(0.6, 0.7, 0.85))
+	status.add_theme_font_size_override("font_size", 12)
+	status.custom_minimum_size = Vector2(320, 0)
+	vbox.add_child(status)
+
+	_play_boot_sound()
+
+	var tween := create_tween()
+	tween.tween_property(vbox, "modulate:a", 1.0, 0.4)
+	tween.tween_property(bar, "value", 100.0, 1.9).set_trans(Tween.TRANS_LINEAR)
+	tween.tween_callback(func(): status.text = "Bricks iniciado.")
+	tween.tween_interval(0.35)
+	tween.tween_callback(on_complete)
+
+
+func _play_boot_sound() -> void:
+	if not ResourceLoader.exists(BOOT_SOUND_PATH):
+		# Sem arquivo definitivo ainda: a sequência de boot roda normalmente,
+		# só sem som - basta colocar um .wav/.ogg em BOOT_SOUND_PATH quando o
+		# efeito de "computador antigo ligando" estiver pronto.
+		return
+	if _boot_player.stream == null:
+		_boot_player.stream = load(BOOT_SOUND_PATH)
+	_boot_player.play()
 
 
 # ---------------------------------------------------------------------------
@@ -590,15 +684,20 @@ func _build_desktop() -> void:
 	hud.position = Vector2(16, 10)
 	desktop_layer.add_child(hud)
 
-	# Ícones do desktop
-	email_badge = _add_desktop_icon(desktop_layer, Vector2(30, 60), "Outlook\nExpress", Color(0.95, 0.85, 0.2), true, _open_email)
-	if email_badge:
-		# A bolinha nasce escondida - só aparece com a animação/som depois de
-		# 1s, controlada por _schedule_email_notification() logo abaixo.
-		email_badge.visible = false
-	_add_desktop_icon(desktop_layer, Vector2(30, 170), "Editor de\nCódigo", Color(0.25, 0.55, 0.95), false, _try_open_editor)
-	_add_desktop_icon(desktop_layer, Vector2(30, 280), "Meu\nComputador", Color(0.8, 0.8, 0.85), false, func(): _show_toast("Nada de interessante por aqui..."))
-	_add_desktop_icon(desktop_layer, Vector2(30, 390), "Lixeira", Color(0.6, 0.6, 0.65), false, func(): _show_toast("A lixeira está vazia."))
+	# Ícones do desktop (arrastáveis - ver _add_desktop_icon). Email e Editor
+	# não voltam a aparecer se já foram excluídos na lixeira nessa partida.
+	_trash_icon_box = null
+	email_badge = null
+	if not _email_icon_deleted:
+		email_badge = _add_desktop_icon(desktop_layer, Vector2(30, 60), "Outlook\nExpress", Color(0.95, 0.85, 0.2), true, _open_email, "email")
+		if email_badge:
+			# A bolinha nasce escondida - só aparece com a animação/som depois de
+			# 1s, controlada por _schedule_email_notification() logo abaixo.
+			email_badge.visible = false
+	if not _editor_icon_deleted:
+		_add_desktop_icon(desktop_layer, Vector2(30, 170), "Editor de\nCódigo", Color(0.25, 0.55, 0.95), false, _try_open_editor, "editor")
+	_add_desktop_icon(desktop_layer, Vector2(30, 280), "Meu\nComputador", Color(0.8, 0.8, 0.85), false, func(): _show_toast("Nada de interessante por aqui..."), "computer")
+	_add_desktop_icon(desktop_layer, Vector2(30, 390), "Lixeira", Color(0.6, 0.6, 0.65), false, func(): _show_toast("A lixeira está vazia."), "trash")
 
 	# Camada de janelas (fica por cima de tudo, mas ainda dentro da tela)
 	window_layer = Control.new()
@@ -608,14 +707,17 @@ func _build_desktop() -> void:
 
 	_build_taskbar()
 
-	if GameManager.has_unread_email():
+	if not _email_icon_deleted and GameManager.has_unread_email():
 		_schedule_email_notification()
 
 
-func _add_desktop_icon(parent: Control, pos: Vector2, caption: String, tint: Color, notify: bool, on_activate: Callable) -> Control:
+func _add_desktop_icon(parent: Control, default_pos: Vector2, caption: String, tint: Color, notify: bool, on_activate: Callable, icon_id: String = "") -> Control:
 	var box := VBoxContainer.new()
-	box.position = pos
+	# Se o jogador já arrastou esse ícone antes (nessa mesma partida), volta
+	# pra posição que ele deixou em vez de nascer sempre no lugar padrão.
+	box.position = _icon_positions.get(icon_id, default_pos) if icon_id != "" else default_pos
 	box.custom_minimum_size = Vector2(72, 84)
+	box.pivot_offset = Vector2(36, 42)
 	box.mouse_filter = Control.MOUSE_FILTER_STOP
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 
@@ -667,13 +769,139 @@ func _add_desktop_icon(parent: Control, pos: Vector2, caption: String, tint: Col
 	label.add_theme_font_size_override("font_size", 12)
 	box.add_child(label)
 
+	# Distingue "clique" de "arraste": só considera arraste se o mouse se
+	# moveu mais que um pequeno limiar depois de pressionado - abaixo disso,
+	# conta como clique normal (abre o app, com o feedback de
+	# _activate_desktop_icon). Ao soltar em cima da lixeira, dispara a
+	# confirmação de exclusão (só pra "email"/"editor" - ver
+	# _on_desktop_icon_dropped).
+	var drag := {"active": false, "moved": false, "grab_offset": Vector2.ZERO, "start_pos": Vector2.ZERO}
 	box.gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-			on_activate.call()
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed:
+				drag["active"] = true
+				drag["moved"] = false
+				drag["grab_offset"] = box.get_global_mouse_position() - box.position
+				drag["start_pos"] = box.position
+			elif drag["active"]:
+				drag["active"] = false
+				if drag["moved"]:
+					if icon_id != "":
+						_icon_positions[icon_id] = box.position
+					_on_desktop_icon_dropped(box, icon_id)
+				else:
+					_activate_desktop_icon(box, on_activate)
+		elif event is InputEventMouseMotion and drag["active"]:
+			var target: Vector2 = box.get_global_mouse_position() - drag["grab_offset"]
+			target.x = clamp(target.x, 0.0, max(0.0, screen.size.x - box.custom_minimum_size.x))
+			target.y = clamp(target.y, 0.0, max(0.0, screen.size.y - 40.0 - box.custom_minimum_size.y))
+			if target.distance_to(drag["start_pos"]) > 4.0:
+				drag["moved"] = true
+			box.position = target
 	)
 
 	parent.add_child(box)
+	if icon_id == "trash":
+		_trash_icon_box = box
 	return badge_bg
+
+
+# Pequeno efeito de "clique" (o ícone encolhe e volta) seguido de um atraso
+# curto antes de a janela do aplicativo realmente abrir.
+func _activate_desktop_icon(box: Control, on_activate: Callable) -> void:
+	var tween := create_tween()
+	tween.tween_property(box, "scale", Vector2(0.85, 0.85), 0.07)
+	tween.tween_property(box, "scale", Vector2(1.0, 1.0), 0.09)
+	var t := get_tree().create_timer(0.16)
+	t.timeout.connect(func():
+		if is_instance_valid(box):
+			on_activate.call()
+	)
+
+
+# Chamado quando o jogador solta um ícone depois de arrastá-lo. Só a "Caixa
+# de E-mail" (Outlook Express) e o "Editor de Código" disparam a mecânica da
+# lixeira; os demais ícones apenas ficam na nova posição.
+func _on_desktop_icon_dropped(box: Control, icon_id: String) -> void:
+	if icon_id != "email" and icon_id != "editor":
+		return
+	if not is_instance_valid(_trash_icon_box) or _trash_icon_box == box:
+		return
+	var trash_rect := Rect2(_trash_icon_box.global_position, _trash_icon_box.size)
+	var box_rect := Rect2(box.global_position, box.size)
+	if trash_rect.intersects(box_rect):
+		_show_trash_confirm_popup(box, icon_id)
+
+
+func _show_trash_confirm_popup(icon_box: Control, icon_id: String) -> void:
+	var built := _make_window("Lixeira", Vector2(360, 170))
+	var win: Control = built["window"]
+	var content: Control = built["content"]
+	built["close_button"].pressed.connect(func(): win.queue_free())
+
+	var margin := MarginContainer.new()
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 16)
+	margin.add_theme_constant_override("margin_top", 14)
+	margin.add_theme_constant_override("margin_right", 16)
+	margin.add_theme_constant_override("margin_bottom", 14)
+	content.add_child(margin)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 16)
+	margin.add_child(vbox)
+
+	var msg := Label.new()
+	msg.text = "Você tem certeza? Essa alteração será irreversível."
+	msg.autowrap_mode = TextServer.AUTOWRAP_WORD
+	msg.add_theme_color_override("font_color", C_TEXT_DARK)
+	msg.custom_minimum_size = Vector2(320, 0)
+	vbox.add_child(msg)
+
+	var btn_row := HBoxContainer.new()
+	btn_row.add_theme_constant_override("separation", 10)
+	btn_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_child(btn_row)
+
+	var cancel_btn := Button.new()
+	cancel_btn.text = "Cancelar"
+	cancel_btn.custom_minimum_size = Vector2(120, 32)
+	cancel_btn.pressed.connect(func(): win.queue_free())
+	btn_row.add_child(cancel_btn)
+
+	var confirm_btn := Button.new()
+	confirm_btn.text = "Excluir"
+	confirm_btn.custom_minimum_size = Vector2(120, 32)
+	confirm_btn.pressed.connect(func():
+		win.queue_free()
+		_delete_desktop_icon(icon_box, icon_id)
+	)
+	btn_row.add_child(confirm_btn)
+
+
+# Exclusão definitiva do ícone (email ou editor). Sem esses dois, o dia de
+# trabalho fica impossível de completar - por isso vai direto pra tela de
+# "Você se demitiu" (ver _show_quit_screen).
+func _delete_desktop_icon(icon_box: Control, icon_id: String) -> void:
+	if icon_id == "email":
+		_email_icon_deleted = true
+		if is_instance_valid(email_badge):
+			email_badge.visible = false
+	elif icon_id == "editor":
+		_editor_icon_deleted = true
+	_icon_positions.erase(icon_id)
+	if is_instance_valid(icon_box):
+		icon_box.queue_free()
+	_show_quit_screen()
+
+
+# Limpa toda a personalização da área de trabalho (posições arrastadas e
+# ícones excluídos). Chamado sempre que a campanha é reiniciada do zero.
+func _reset_desktop_customizations() -> void:
+	_icon_positions.clear()
+	_email_icon_deleted = false
+	_editor_icon_deleted = false
+	_trash_icon_box = null
 
 
 func _build_taskbar() -> void:
@@ -1787,6 +2015,67 @@ func _show_fired_final_panel() -> void:
 	btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	vbox.add_child(btn)
 	btn.pressed.connect(func():
+		_reset_desktop_customizations()
+		GameManager.reset_game()
+		_show_main_menu()
+	)
+
+	var tween := create_tween()
+	tween.tween_property(vbox, "modulate:a", 1.0, 0.6)
+
+
+# ---------------------------------------------------------------------------
+# TELA DE DESISTÊNCIA ("Você se demitiu") - disparada só quando o jogador
+# arrasta a Caixa de E-mail ou o Editor de Código pra lixeira e confirma a
+# exclusão (ver _delete_desktop_icon). É diferente da tela de demissão por
+# perder pontuação pra IA (_show_fired_screen), que continua intacta.
+# ---------------------------------------------------------------------------
+func _show_quit_screen() -> void:
+	state = State.QUIT
+	race_active = false
+	_sabotage.stop()
+	_close_all_sabotage_windows()
+
+	for c in window_layer.get_children():
+		c.queue_free()
+	for c in screen.get_children():
+		c.queue_free()
+
+	var bg := ColorRect.new()
+	bg.color = Color(0.05, 0.05, 0.05)
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	screen.add_child(bg)
+
+	var vbox := VBoxContainer.new()
+	vbox.position = Vector2(screen.size.x / 2.0 - 260, screen.size.y / 2.0 - 100)
+	vbox.custom_minimum_size = Vector2(520, 200)
+	vbox.add_theme_constant_override("separation", 16)
+	vbox.modulate = Color(1, 1, 1, 0)
+	screen.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "VOCÊ SE DEMITIU"
+	title.add_theme_font_size_override("font_size", 34)
+	title.add_theme_color_override("font_color", C_ERROR)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.custom_minimum_size = Vector2(520, 0)
+	vbox.add_child(title)
+
+	var sub := Label.new()
+	sub.text = "Sem a caixa de e-mail e sem o editor de código, não há mais como continuar o trabalho por aqui."
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub.autowrap_mode = TextServer.AUTOWRAP_WORD
+	sub.add_theme_color_override("font_color", C_ERROR)
+	sub.custom_minimum_size = Vector2(520, 0)
+	vbox.add_child(sub)
+
+	var btn := Button.new()
+	btn.text = "Retornar para o Menu"
+	btn.custom_minimum_size = Vector2(200, 34)
+	btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	vbox.add_child(btn)
+	btn.pressed.connect(func():
+		_reset_desktop_customizations()
 		GameManager.reset_game()
 		_show_main_menu()
 	)
@@ -1820,8 +2109,9 @@ func _show_victory_screen() -> void:
 	vbox.add_child(title)
 
 	var sub := Label.new()
-	sub.text = "Catorze dias de duelo contra a IA, catorze vitórias. O emprego é seu — por enquanto."
+	sub.text = "Por enquanto você superou o chatbot. Parabéns, você chegou ao limite do jogo. Aguarde mais atualizações."
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub.autowrap_mode = TextServer.AUTOWRAP_WORD
 	sub.add_theme_color_override("font_color", Color(0.85, 0.9, 0.85))
 	sub.custom_minimum_size = Vector2(560, 0)
 	vbox.add_child(sub)
@@ -1832,6 +2122,7 @@ func _show_victory_screen() -> void:
 	btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	vbox.add_child(btn)
 	btn.pressed.connect(func():
+		_reset_desktop_customizations()
 		GameManager.reset_game()
 		_build_desktop()
 	)
