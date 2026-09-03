@@ -34,7 +34,7 @@ extends Control
 ##   (GameManager.MAX_LOSSES = 1) - a tela de demissão é propositalmente
 ##   simples por enquanto.
 
-enum State { MENU, CONFIG_MENU, BOOT, DESKTOP, EMAIL, RACE, RESULT, FIRED, VICTORY, QUIT }
+enum State { MENU, CONFIG_MENU, BOOT, DESKTOP, EMAIL, RACE, RESULT, FIRED, VICTORY, QUIT, CREDITS }
 
 # ---------------------------------------------------------------------------
 # Paleta "Windows XP"
@@ -45,6 +45,24 @@ const C_DESKTOP := Color(0.10, 0.35, 0.68)
 const C_TASKBAR := Color(0.13, 0.44, 0.85)
 const C_TASKBAR_DARK := Color(0.05, 0.22, 0.55)
 const C_START_GREEN := Color(0.20, 0.62, 0.22)
+
+# ---------------------------------------------------------------------------
+# Paleta da barra de tarefas "Bricks" (bege/marrom, extraída do mockup do
+# jogo) - substitui o visual azul "XP" só na taskbar: fundo bege, logo
+# "BRICKS" em marrom escuro no lugar do botão "Iniciar", e um pequeno painel
+# mais escuro em volta do relógio, no canto direito.
+# ---------------------------------------------------------------------------
+const C_TASKBAR_BEIGE := Color(0.847, 0.788, 0.698)
+const C_TASKBAR_BEIGE_BORDER := Color(0.667, 0.580, 0.427)
+const C_BRICKS_LOGO := Color(0.267, 0.184, 0.035)
+const C_CLOCK_PANEL_BG := Color(0.667, 0.580, 0.427)
+const C_CLOCK_PANEL_BORDER := Color(0.576, 0.490, 0.345)
+# Fundo da tela de boot do "Bricks" - mesma família bege/marrom da taskbar,
+# só um tom mais claro (creme) pra servir de fundo de tela cheia.
+const C_BOOT_BG := Color(0.93, 0.88, 0.78)
+# Roxo/índigo escuro do mockup do menu - usado como fundo do menu principal
+# e da tela de créditos quando não há wallpaper próprio configurado.
+const C_MENU_BG_PURPLE := Color(0.102, 0.071, 0.392)
 const C_WINDOW_BG := Color(0.93, 0.93, 0.91)
 const C_TITLEBAR_A := Color(0.10, 0.32, 0.85)
 const C_TITLEBAR_B := Color(0.35, 0.58, 0.95)
@@ -122,6 +140,56 @@ const MENU_BG_IMAGE_PATH := "res://assets/images/menu_background.png"
 const DESKTOP_BG_IMAGE_PATH := "res://assets/images/desktop_wallpaper.png"
 
 # ---------------------------------------------------------------------------
+# Ícones da área de trabalho (imagens) - opcionais. Se o arquivo ainda não
+# existir num desses caminhos, o ícone cai de volta no quadradinho colorido
+# de sempre, sem erro nenhum (mesmo esquema dos wallpapers acima).
+# ---------------------------------------------------------------------------
+const ICON_EMAIL_IMAGE_PATH := "res://assets/images/icons/icon_email.png"
+const ICON_EDITOR_IMAGE_PATH := "res://assets/images/icons/icon_editor.png"
+const ICON_COMPUTER_IMAGE_PATH := "res://assets/images/icons/icon_computer.png"
+const ICON_TRASH_IMAGE_PATH := "res://assets/images/icons/icon_trash.png"
+
+# ---------------------------------------------------------------------------
+# Moldura de janela (usada em TODAS as janelas do jogo - email, editor de
+# código, pop-ups de confirmação, sabotagem, resultado) e o "kit" visual do
+# menu principal (botão, título e o selo "daesc" que abre os créditos).
+# Todos opcionais - se o arquivo não existir ainda, cada um cai no visual
+# de sempre (sem erro), então dá pra ir adicionando aos poucos.
+# ---------------------------------------------------------------------------
+const WINDOW_FRAME_IMAGE_PATH := "res://assets/images/window_frame.png"
+# Moldura da janela (window_frame.png): reexportada em 3x (nearest-neighbor)
+# a partir do recorte original do mockup - o ícone de fechar (o único botão
+# que sobrou; restaurar/minimizar foram apagados da própria imagem, já que
+# não são mais usados) ficou grande o bastante pra não parecer "espremido"
+# nem ficar off-center dentro da barra de título. Retângulo/margens abaixo
+# já são as coordenadas da versão em 3x.
+const WINDOW_FRAME_MARGIN_LEFT := 6
+const WINDOW_FRAME_MARGIN_TOP := 33
+const WINDOW_FRAME_MARGIN_RIGHT := 6
+const WINDOW_FRAME_MARGIN_BOTTOM := 6
+const WINDOW_FRAME_CLOSE_RECT := Rect2(6, 6, 21, 21)
+# Fonte "estilo pixel" pro título da janela. Opcional - coloque um .ttf (ex.:
+# "Press Start 2P", "Silkscreen", "VT323") nesse caminho pra usar a fonte de
+# verdade; sem o arquivo, cai numa fonte pixelada já instalada no sistema
+# (se houver) e, por último, na fonte padrão.
+const WINDOW_TITLE_FONT_TTF_PATH := "res://assets/fonts/pixel_font.ttf"
+const WINDOW_TITLE_FONT_SYSTEM_NAMES := [
+	"Press Start 2P", "Silkscreen", "VT323", "Pixel Operator", "monogram",
+	"Perfect DOS VGA 437", "monospace"
+]
+var _window_title_font: Font
+const MENU_BUTTON_IMAGE_PATH := "res://assets/images/menu_button.png"
+const MENU_TITLE_IMAGE_PATH := "res://assets/images/menu_title.png"
+const DAESC_BADGE_IMAGE_PATH := "res://assets/images/daesc_badge.png"
+# Créditos - placeholder editável. Adicione uma linha por pessoa/arte
+# conforme o time for entrando; a tela de créditos já lê essa lista sozinha.
+const CREDITS_LINES := [
+	"daesc",
+	"",
+	"(em breve: mais créditos e artes aqui)",
+]
+
+# ---------------------------------------------------------------------------
 # Fonte de código (JetBrains Mono Nerd Font, com fallback)
 # ---------------------------------------------------------------------------
 # Se um arquivo .ttf/.otf da JetBrains Mono Nerd Font for colocado nesse
@@ -169,7 +237,21 @@ var _icon_positions: Dictionary = {}
 # _delete_desktop_icon) e o jogo vai direto pra tela de "Você se demitiu".
 var _email_icon_deleted: bool = false
 var _editor_icon_deleted: bool = false
+# "Meu Computador" também pode ser excluído na lixeira, mas é só cosmético -
+# não dispara a tela de "Você se demitiu" (ver _delete_desktop_icon).
+var _computer_icon_deleted: bool = false
 var _trash_icon_box: Control = null
+
+# --- Barra de tarefas "de verdade" (menu do Bricks + janelas abertas) ---
+# Linha de botões da taskbar com os apps abertos no momento (email, editor).
+var _taskbar_row: HBoxContainer
+# icon_id ("email"/"editor") -> Button correspondente na taskbar.
+var _taskbar_buttons: Dictionary = {}
+# icon_id -> janela (Control) atual daquele app, pra minimizar/restaurar.
+var _open_windows: Dictionary = {}
+# Menuzinho que abre ao clicar no símbolo do Bricks (Voltar ao Menu /
+# Configurações / Sair). Só existe enquanto estiver aberto.
+var _start_menu_popup: Control = null
 
 # --- Variáveis da corrida (race) ---
 var race_code: String = ""
@@ -192,6 +274,10 @@ var race_ai_active: bool = true
 
 # --- Cronômetro e precisão (ver cabeçalho do arquivo) ---
 var race_start_msec: int = 0
+# Fica falso até o jogador digitar o primeiro caractere - o cronômetro (e a
+# IA) só passam a andar a partir daí, em vez de já começar a contar no
+# instante em que a janela do editor abre.
+var race_started_typing: bool = false
 var race_prev_input: String = ""
 var race_total_typed: int = 0
 var race_error_typed: int = 0
@@ -228,8 +314,11 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	if race_active and not race_finished:
-		if race_ai_active:
-			_update_ai_progress(delta)
+		# Nada anda (nem o cronômetro, nem a IA) até o jogador digitar o
+		# primeiro caractere - ver race_started_typing / _on_race_text_changed.
+		if race_started_typing:
+			if race_ai_active:
+				_update_ai_progress(delta)
 		_update_race_hud()
 
 
@@ -297,8 +386,12 @@ func _make_background(color_fallback: Color, image_path: String) -> Control:
 		var tex_rect := TextureRect.new()
 		tex_rect.texture = load(image_path)
 		tex_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		tex_rect.stretch_mode = TextureRect.STRETCH_SCALE
+		# COVERED (em vez de SCALE puro): a imagem preenche a tela toda,
+		# sempre "grande", sem esticar/deformar fora da proporção original -
+		# o excesso é cortado nas bordas em vez de espremer o desenho.
+		tex_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 		tex_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+		tex_rect.clip_contents = true
 		tex_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		return tex_rect
 	var rect := ColorRect.new()
@@ -328,6 +421,22 @@ func _get_code_font() -> Font:
 		_code_font = sys_font
 
 	return _code_font
+
+
+# Fonte "estilo pixel" usada no título das janelas (ver WINDOW_TITLE_FONT_*
+# no topo do arquivo) - mesmo padrão de fallback gracioso da fonte de código.
+func _get_window_title_font() -> Font:
+	if _window_title_font:
+		return _window_title_font
+
+	if ResourceLoader.exists(WINDOW_TITLE_FONT_TTF_PATH):
+		_window_title_font = load(WINDOW_TITLE_FONT_TTF_PATH)
+	else:
+		var sys_font := SystemFont.new()
+		sys_font.font_names = PackedStringArray(WINDOW_TITLE_FONT_SYSTEM_NAMES)
+		_window_title_font = sys_font
+
+	return _window_title_font
 
 
 # ---------------------------------------------------------------------------
@@ -393,25 +502,45 @@ func _show_main_menu() -> void:
 	for c in screen.get_children():
 		c.queue_free()
 
-	var bg := _make_background(C_DESKTOP.darkened(0.45), MENU_BG_IMAGE_PATH)
+	# Sem wallpaper próprio configurado (MENU_BG_IMAGE_PATH), cai no roxo/
+	# índigo do mockup em vez do azul de antes - já fica com a cara certa
+	# mesmo sem nenhuma imagem de fundo.
+	var bg := _make_background(C_MENU_BG_PURPLE, MENU_BG_IMAGE_PATH)
 	screen.add_child(bg)
 
 	_play_menu_music()
 
+	# Largura do título (imagem "THE AI PARABLE") - maior que a largura dos
+	# botões de propósito, pra ficar em destaque; os botões usam
+	# SIZE_SHRINK_CENTER (ver _make_menu_button) então continuam com o
+	# tamanho de sempre e ficam centralizados mesmo com o vbox mais largo.
+	const TITLE_WIDTH := 460.0
+	const TITLE_HEIGHT := 90.0
+
 	var vbox := VBoxContainer.new()
-	vbox.custom_minimum_size = Vector2(320, 0)
-	vbox.position = Vector2(screen.size.x / 2.0 - 160, screen.size.y / 2.0 - 140)
+	vbox.custom_minimum_size = Vector2(TITLE_WIDTH, 0)
+	vbox.position = Vector2(screen.size.x / 2.0 - TITLE_WIDTH / 2.0, screen.size.y / 2.0 - 160)
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	vbox.add_theme_constant_override("separation", 18)
 	screen.add_child(vbox)
 
-	var title := Label.new()
-	title.text = "CODE WARRIOR\nHumano vs IA"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 30)
-	title.add_theme_color_override("font_color", Color(1, 1, 1))
-	title.custom_minimum_size = Vector2(320, 0)
-	vbox.add_child(title)
+	if ResourceLoader.exists(MENU_TITLE_IMAGE_PATH):
+		var title_tex := TextureRect.new()
+		title_tex.texture = load(MENU_TITLE_IMAGE_PATH)
+		title_tex.custom_minimum_size = Vector2(TITLE_WIDTH, TITLE_HEIGHT)
+		title_tex.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		title_tex.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+		title_tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		title_tex.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		vbox.add_child(title_tex)
+	else:
+		var title := Label.new()
+		title.text = "CODE WARRIOR\nHumano vs IA"
+		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		title.add_theme_font_size_override("font_size", 30)
+		title.add_theme_color_override("font_color", Color(1, 1, 1))
+		title.custom_minimum_size = Vector2(320, 0)
+		vbox.add_child(title)
 
 	var spacer := Control.new()
 	spacer.custom_minimum_size = Vector2(0, 12)
@@ -429,13 +558,203 @@ func _show_main_menu() -> void:
 	exit_btn.pressed.connect(func(): get_tree().quit())
 	vbox.add_child(exit_btn)
 
+	# Selo "daesc" no canto inferior direito - clicável, abre os créditos
+	# (ver _show_credits_screen). É onde mais artes/créditos entram no
+	# futuro.
+	_add_daesc_credits_button()
 
+
+# ---------------------------------------------------------------------------
+# SÍMBOLO DO "BRICKS" (logo do sistema operacional)
+# ---------------------------------------------------------------------------
+# Ícone de "tijolinhos" desenhado inteiramente em código (sem depender de
+# nenhuma imagem externa) - um quadrado com 2 fileiras de tijolos em
+# alvenaria clássica (fiada de baixo deslocada em meio tijolo). Usado em
+# TODO lugar que precisar do símbolo do "Bricks" com a mesma cara: barra de
+# tarefas e tela de boot (ver _build_taskbar / _play_boot_sequence).
+func _make_bricks_logo(size: float = 22.0) -> Control:
+	var frame := Panel.new()
+	frame.custom_minimum_size = Vector2(size, size)
+	# Fica com tamanho fixo (não estica) e centralizado, mesmo dentro de
+	# containers (HBox/VBox) que por padrão esticariam um Control comum.
+	frame.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	frame.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var fsb := StyleBoxFlat.new()
+	fsb.bg_color = C_CLOCK_PANEL_BG
+	fsb.border_width_left = 1
+	fsb.border_width_right = 1
+	fsb.border_width_top = 1
+	fsb.border_width_bottom = 1
+	fsb.border_color = C_CLOCK_PANEL_BORDER
+	fsb.corner_radius_top_left = 3
+	fsb.corner_radius_top_right = 3
+	fsb.corner_radius_bottom_left = 3
+	fsb.corner_radius_bottom_right = 3
+	frame.add_theme_stylebox_override("panel", fsb)
+
+	var clip := Control.new()
+	clip.set_anchors_preset(Control.PRESET_FULL_RECT)
+	clip.clip_contents = true
+	clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frame.add_child(clip)
+
+	var brick_w: float = size / 2.0
+	var brick_h: float = size / 3.0
+	var gap := 1.0
+
+	# Fiada de cima: 2 tijolos inteiros.
+	for i in range(2):
+		var r := ColorRect.new()
+		r.color = C_BRICKS_LOGO
+		r.position = Vector2(i * brick_w + gap, gap)
+		r.size = Vector2(brick_w - gap * 2.0, brick_h - gap)
+		clip.add_child(r)
+
+	# Fiada de baixo: deslocada meio tijolo (padrão clássico de alvenaria).
+	for i in range(-1, 2):
+		var r := ColorRect.new()
+		r.color = C_BRICKS_LOGO
+		r.position = Vector2(brick_w / 2.0 + i * brick_w + gap, brick_h + gap * 2.0)
+		r.size = Vector2(brick_w - gap * 2.0, brick_h - gap)
+		clip.add_child(r)
+
+	return frame
+
+
+# Se MENU_BUTTON_IMAGE_PATH existir, o "molde" pixel art vira o fundo do
+# botão (esticado como StyleBoxTexture, preservando as bordas/bisel); senão
+# cai no Button padrão de sempre.
 func _make_menu_button(label_text: String) -> Button:
 	var btn := Button.new()
 	btn.text = label_text
 	btn.custom_minimum_size = Vector2(240, 46)
+	# Fica com largura fixa e centralizado, mesmo dentro de um vbox mais
+	# largo que ele (ex.: pra acomodar o título maior no menu principal).
+	btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	btn.add_theme_font_size_override("font_size", 18)
+	if ResourceLoader.exists(MENU_BUTTON_IMAGE_PATH):
+		var tex := load(MENU_BUTTON_IMAGE_PATH)
+		var btn_sb := StyleBoxTexture.new()
+		btn_sb.texture = tex
+		btn_sb.texture_margin_left = 10
+		btn_sb.texture_margin_right = 10
+		btn_sb.texture_margin_top = 8
+		btn_sb.texture_margin_bottom = 8
+		btn.add_theme_stylebox_override("normal", btn_sb)
+		btn.add_theme_stylebox_override("hover", btn_sb)
+		btn.add_theme_stylebox_override("pressed", btn_sb)
+		btn.add_theme_stylebox_override("focus", btn_sb)
+		btn.add_theme_color_override("font_color", Color(1, 1, 1))
+		btn.add_theme_color_override("font_hover_color", Color(1, 1, 1))
+		btn.add_theme_color_override("font_pressed_color", Color(1, 1, 1))
+		btn.add_theme_color_override("font_focus_color", Color(1, 1, 1))
 	return btn
+
+
+# ---------------------------------------------------------------------------
+# SELO "DAESC" (canto inferior direito do menu) -> TELA DE CRÉDITOS
+# ---------------------------------------------------------------------------
+# Botão com a arte do selo, se ela já existir; senão cai num círculo simples
+# com "?" no meio - mesmo canto, mesma função, só sem a arte final ainda.
+func _add_daesc_credits_button() -> void:
+	var has_image := ResourceLoader.exists(DAESC_BADGE_IMAGE_PATH)
+	var badge_size := Vector2(52, 45)
+	var badge: Control
+
+	if has_image:
+		var tex_rect := TextureRect.new()
+		tex_rect.texture = load(DAESC_BADGE_IMAGE_PATH)
+		tex_rect.custom_minimum_size = badge_size
+		tex_rect.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+		tex_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tex_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		badge = tex_rect
+	else:
+		var fallback := Panel.new()
+		fallback.custom_minimum_size = badge_size
+		var fsb := StyleBoxFlat.new()
+		fsb.bg_color = C_MENU_BG_PURPLE.lightened(0.15)
+		fsb.border_width_left = 2
+		fsb.border_width_right = 2
+		fsb.border_width_top = 2
+		fsb.border_width_bottom = 2
+		fsb.border_color = Color(1, 1, 1, 0.6)
+		fsb.corner_radius_top_left = int(badge_size.y / 2.0)
+		fsb.corner_radius_top_right = int(badge_size.y / 2.0)
+		fsb.corner_radius_bottom_left = int(badge_size.y / 2.0)
+		fsb.corner_radius_bottom_right = int(badge_size.y / 2.0)
+		fallback.add_theme_stylebox_override("panel", fsb)
+		var q := Label.new()
+		q.text = "?"
+		q.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		q.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		q.set_anchors_preset(Control.PRESET_FULL_RECT)
+		q.add_theme_color_override("font_color", Color(1, 1, 1))
+		q.add_theme_font_size_override("font_size", 18)
+		q.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		fallback.add_child(q)
+		badge = fallback
+
+	badge.position = Vector2(screen.size.x - badge_size.x - 14, screen.size.y - badge_size.y - 14)
+	badge.mouse_filter = Control.MOUSE_FILTER_STOP
+	badge.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			_show_credits_screen()
+	)
+	screen.add_child(badge)
+
+
+func _show_credits_screen() -> void:
+	state = State.CREDITS
+	for c in screen.get_children():
+		c.queue_free()
+
+	var bg := ColorRect.new()
+	bg.color = C_MENU_BG_PURPLE
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	screen.add_child(bg)
+
+	_play_menu_music()
+
+	var vbox := VBoxContainer.new()
+	vbox.custom_minimum_size = Vector2(420, 0)
+	vbox.position = Vector2(screen.size.x / 2.0 - 210, 50)
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_theme_constant_override("separation", 10)
+	screen.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "CRÉDITOS"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 28)
+	title.add_theme_color_override("font_color", Color(1, 1, 1))
+	title.custom_minimum_size = Vector2(420, 0)
+	vbox.add_child(title)
+
+	var title_spacer := Control.new()
+	title_spacer.custom_minimum_size = Vector2(0, 8)
+	vbox.add_child(title_spacer)
+
+	# Lista de créditos - editável em CREDITS_LINES, lá no topo do arquivo.
+	# Adicione uma linha por pessoa/arte conforme o time for entrando; essa
+	# tela já lê a lista sozinha, sem precisar mexer aqui.
+	for line in CREDITS_LINES:
+		var lbl := Label.new()
+		lbl.text = line
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl.add_theme_color_override("font_color", Color(0.85, 0.85, 0.95))
+		lbl.custom_minimum_size = Vector2(420, 0)
+		vbox.add_child(lbl)
+
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0, 12)
+	vbox.add_child(spacer)
+
+	var back_btn := _make_menu_button("VOLTAR")
+	back_btn.pressed.connect(_show_main_menu)
+	back_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	vbox.add_child(back_btn)
 
 
 # ---------------------------------------------------------------------------
@@ -444,17 +763,25 @@ func _make_menu_button(label_text: String) -> Button:
 # Por enquanto só tem o botão de voltar. No futuro, novas opções (volume,
 # dificuldade, fonte, etc.) entram aqui dentro do vbox, sem precisar mexer
 # no menu principal.
-func _show_config_menu() -> void:
+# "return_callback" opcional: se vazio, o RETURN volta pro menu principal
+# (comportamento de sempre, quando a config é aberta a partir do menu). Se
+# for passado (ver _on_start_menu_open_config), o RETURN chama ele em vez
+# disso - por exemplo _build_desktop, pra voltar direto pro MESMO dia em
+# andamento sem resetar o progresso da campanha nem replayer o boot/
+# transição de dia inteiros de novo.
+func _show_config_menu(return_callback: Callable = Callable()) -> void:
 	state = State.CONFIG_MENU
 	for c in screen.get_children():
 		c.queue_free()
 
-	var bg := _make_background(C_DESKTOP.darkened(0.45), MENU_BG_IMAGE_PATH)
+	var bg := _make_background(C_MENU_BG_PURPLE, MENU_BG_IMAGE_PATH)
 	screen.add_child(bg)
 
-	# A música do menu continua tocando aqui (só reinicia se, por algum
-	# motivo, tiver parado) - CONFIG_MENU ainda conta como "tela de menu".
-	_play_menu_music()
+	# A música do menu só toca se a volta for pro menu principal (que já tem
+	# música própria). Se a config foi aberta de dentro do jogo, o desktop
+	# não tem música - evita ela ficar tocando por cima ao voltar pro dia.
+	if not return_callback.is_valid():
+		_play_menu_music()
 
 	var vbox := VBoxContainer.new()
 	vbox.custom_minimum_size = Vector2(320, 0)
@@ -483,7 +810,13 @@ func _show_config_menu() -> void:
 	vbox.add_child(spacer)
 
 	var back_btn := _make_menu_button("RETURN")
-	back_btn.pressed.connect(_show_main_menu)
+	back_btn.pressed.connect(func():
+		if return_callback.is_valid():
+			_stop_menu_music()
+			return_callback.call()
+		else:
+			_show_main_menu()
+	)
 	vbox.add_child(back_btn)
 
 
@@ -582,37 +915,41 @@ func _play_boot_sequence(on_complete: Callable) -> void:
 	for c in screen.get_children():
 		c.queue_free()
 
+	# Mesma paleta bege/marrom da barra de tarefas - o "Bricks" é sempre a
+	# mesma cara, do boot ao desktop.
 	var bg := ColorRect.new()
-	bg.color = Color(0, 0, 0)
+	bg.color = C_BOOT_BG
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	screen.add_child(bg)
 
 	var vbox := VBoxContainer.new()
 	vbox.custom_minimum_size = Vector2(320, 0)
-	vbox.position = Vector2(screen.size.x / 2.0 - 160, screen.size.y / 2.0 - 40)
+	vbox.position = Vector2(screen.size.x / 2.0 - 160, screen.size.y / 2.0 - 50)
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	vbox.add_theme_constant_override("separation", 14)
 	vbox.modulate = Color(1, 1, 1, 0)
 	screen.add_child(vbox)
 
-	var logo := Label.new()
-	logo.text = "BRICKS"
-	logo.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	logo.add_theme_font_size_override("font_size", 36)
-	logo.add_theme_color_override("font_color", Color(0.85, 0.92, 1.0))
-	logo.custom_minimum_size = Vector2(320, 0)
-	vbox.add_child(logo)
+	var logo_row := HBoxContainer.new()
+	logo_row.add_theme_constant_override("separation", 10)
+	logo_row.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	vbox.add_child(logo_row)
 
-	var sub := Label.new()
-	sub.text = "sistema operacional"
-	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	sub.add_theme_color_override("font_color", Color(0.6, 0.7, 0.85))
-	vbox.add_child(sub)
-	sub.custom_minimum_size = Vector2(320, 0)
+	logo_row.add_child(_make_bricks_logo(30.0))
+
+	var logo := Label.new()
+	logo.text = "BRICKS OS"
+	logo.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	logo.add_theme_font_size_override("font_size", 32)
+	logo.add_theme_color_override("font_color", C_BRICKS_LOGO)
+	logo_row.add_child(logo)
 
 	var bar_spacer := Control.new()
-	bar_spacer.custom_minimum_size = Vector2(0, 10)
+	bar_spacer.custom_minimum_size = Vector2(0, 14)
 	vbox.add_child(bar_spacer)
 
+	# Barra de carregamento com cantos arredondados (~5px) em vez de reta -
+	# mesma cor de sempre, só com border_radius pra ficar mais suave.
 	var bar := ProgressBar.new()
 	bar.min_value = 0
 	bar.max_value = 100
@@ -620,17 +957,30 @@ func _play_boot_sequence(on_complete: Callable) -> void:
 	bar.show_percentage = false
 	bar.custom_minimum_size = Vector2(320, 14)
 	var bar_bg := StyleBoxFlat.new()
-	bar_bg.bg_color = Color(0.15, 0.16, 0.2)
+	bar_bg.bg_color = Color(1.0, 0.97, 0.92)
+	bar_bg.border_width_left = 1
+	bar_bg.border_width_right = 1
+	bar_bg.border_width_top = 1
+	bar_bg.border_width_bottom = 1
+	bar_bg.border_color = C_TASKBAR_BEIGE_BORDER
+	bar_bg.corner_radius_top_left = 5
+	bar_bg.corner_radius_top_right = 5
+	bar_bg.corner_radius_bottom_left = 5
+	bar_bg.corner_radius_bottom_right = 5
 	bar.add_theme_stylebox_override("background", bar_bg)
 	var bar_fill := StyleBoxFlat.new()
-	bar_fill.bg_color = Color(0.35, 0.65, 1.0)
+	bar_fill.bg_color = C_BRICKS_LOGO
+	bar_fill.corner_radius_top_left = 5
+	bar_fill.corner_radius_top_right = 5
+	bar_fill.corner_radius_bottom_left = 5
+	bar_fill.corner_radius_bottom_right = 5
 	bar.add_theme_stylebox_override("fill", bar_fill)
 	vbox.add_child(bar)
 
 	var status := Label.new()
 	status.text = "Carregando..."
 	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	status.add_theme_color_override("font_color", Color(0.6, 0.7, 0.85))
+	status.add_theme_color_override("font_color", C_TASKBAR_BEIGE_BORDER)
 	status.add_theme_font_size_override("font_size", 12)
 	status.custom_minimum_size = Vector2(320, 0)
 	vbox.add_child(status)
@@ -661,6 +1011,7 @@ func _play_boot_sound() -> void:
 # ---------------------------------------------------------------------------
 func _build_desktop() -> void:
 	state = State.DESKTOP
+	_close_bricks_start_menu()
 
 	for c in screen.get_children():
 		c.queue_free()
@@ -684,20 +1035,21 @@ func _build_desktop() -> void:
 	hud.position = Vector2(16, 10)
 	desktop_layer.add_child(hud)
 
-	# Ícones do desktop (arrastáveis - ver _add_desktop_icon). Email e Editor
-	# não voltam a aparecer se já foram excluídos na lixeira nessa partida.
+	# Ícones do desktop (arrastáveis - ver _add_desktop_icon). Qualquer um
+	# deles some pro resto da partida se já foi excluído na lixeira.
 	_trash_icon_box = null
 	email_badge = null
 	if not _email_icon_deleted:
-		email_badge = _add_desktop_icon(desktop_layer, Vector2(30, 60), "Outlook\nExpress", Color(0.95, 0.85, 0.2), true, _open_email, "email")
+		email_badge = _add_desktop_icon(desktop_layer, Vector2(30, 60), "Outlook\nExpress", Color(0.95, 0.85, 0.2), true, _open_email, "email", ICON_EMAIL_IMAGE_PATH)
 		if email_badge:
 			# A bolinha nasce escondida - só aparece com a animação/som depois de
 			# 1s, controlada por _schedule_email_notification() logo abaixo.
 			email_badge.visible = false
 	if not _editor_icon_deleted:
-		_add_desktop_icon(desktop_layer, Vector2(30, 170), "Editor de\nCódigo", Color(0.25, 0.55, 0.95), false, _try_open_editor, "editor")
-	_add_desktop_icon(desktop_layer, Vector2(30, 280), "Meu\nComputador", Color(0.8, 0.8, 0.85), false, func(): _show_toast("Nada de interessante por aqui..."), "computer")
-	_add_desktop_icon(desktop_layer, Vector2(30, 390), "Lixeira", Color(0.6, 0.6, 0.65), false, func(): _show_toast("A lixeira está vazia."), "trash")
+		_add_desktop_icon(desktop_layer, Vector2(30, 170), "Editor de\nCódigo", Color(0.25, 0.55, 0.95), false, _try_open_editor, "editor", ICON_EDITOR_IMAGE_PATH)
+	if not _computer_icon_deleted:
+		_add_desktop_icon(desktop_layer, Vector2(30, 280), "Meu\nComputador", Color(0.8, 0.8, 0.85), false, func(): _show_toast("Nada de interessante por aqui..."), "computer", ICON_COMPUTER_IMAGE_PATH)
+	_add_desktop_icon(desktop_layer, Vector2(30, 390), "Lixeira", Color(0.6, 0.6, 0.65), false, func(): _show_toast("A lixeira está vazia."), "trash", ICON_TRASH_IMAGE_PATH)
 
 	# Camada de janelas (fica por cima de tudo, mas ainda dentro da tela)
 	window_layer = Control.new()
@@ -711,7 +1063,25 @@ func _build_desktop() -> void:
 		_schedule_email_notification()
 
 
-func _add_desktop_icon(parent: Control, default_pos: Vector2, caption: String, tint: Color, notify: bool, on_activate: Callable, icon_id: String = "") -> Control:
+# Resolve o caminho de um ícone, tentando também uma variação sem a
+# subpasta "icons/" (assets/images/icon_x.png em vez de
+# assets/images/icons/icon_x.png). Se nenhuma das duas existir, avisa no
+# console (fica só no Output do editor - não trava nem mostra erro pro
+# jogador) com os dois caminhos tentados, pra facilitar achar o motivo
+# (pasta com nome diferente, arquivo ainda não importado pelo Godot, etc.).
+func _resolve_icon_path(icon_image_path: String) -> String:
+	if icon_image_path == "":
+		return ""
+	if ResourceLoader.exists(icon_image_path):
+		return icon_image_path
+	var flat_path := icon_image_path.replace("icons/", "")
+	if ResourceLoader.exists(flat_path):
+		return flat_path
+	push_warning("Ícone não encontrado em '%s' nem em '%s' - usando o quadradinho colorido de fallback. Confira se o arquivo existe nesse caminho e se o Godot já importou (abra o editor uma vez e espere a importação)." % [icon_image_path, flat_path])
+	return ""
+
+
+func _add_desktop_icon(parent: Control, default_pos: Vector2, caption: String, tint: Color, notify: bool, on_activate: Callable, icon_id: String = "", icon_image_path: String = "") -> Control:
 	var box := VBoxContainer.new()
 	# Se o jogador já arrastou esse ícone antes (nessa mesma partida), volta
 	# pra posição que ele deixou em vez de nascer sempre no lugar padrão.
@@ -721,22 +1091,44 @@ func _add_desktop_icon(parent: Control, default_pos: Vector2, caption: String, t
 	box.mouse_filter = Control.MOUSE_FILTER_STOP
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
 
-	var icon_panel := Panel.new()
+	# Ícone de verdade (imagem), se o arquivo já existir; senão cai no
+	# quadradinho colorido de sempre - sem erro nenhum (mesmo esquema dos
+	# outros assets opcionais do jogo). Também tenta uma variação sem a
+	# subpasta "icons/" (caso o arquivo tenha sido colocado direto em
+	# assets/images/), pra não depender de acertar a estrutura de pastas
+	# exata na primeira tentativa.
+	var icon_panel: Control
+	var resolved_icon_path := _resolve_icon_path(icon_image_path)
+	if resolved_icon_path != "":
+		var tex_rect := TextureRect.new()
+		tex_rect.texture = load(resolved_icon_path)
+		tex_rect.custom_minimum_size = Vector2(48, 48)
+		tex_rect.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		tex_rect.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+		tex_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tex_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		# Filtro "nearest": mantém a arte pixelada nítida ao escalar, em vez
+		# de borrar (o padrão do Godot borraria os pixels do ícone).
+		tex_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		icon_panel = tex_rect
+	else:
+		var panel := Panel.new()
+		panel.custom_minimum_size = Vector2(48, 48)
+		panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = tint
+		sb.corner_radius_top_left = 8
+		sb.corner_radius_top_right = 8
+		sb.corner_radius_bottom_left = 8
+		sb.corner_radius_bottom_right = 8
+		sb.border_width_left = 2
+		sb.border_width_right = 2
+		sb.border_width_top = 2
+		sb.border_width_bottom = 2
+		sb.border_color = Color(1, 1, 1, 0.6)
+		panel.add_theme_stylebox_override("panel", sb)
+		icon_panel = panel
 	icon_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	icon_panel.custom_minimum_size = Vector2(48, 48)
-	icon_panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = tint
-	sb.corner_radius_top_left = 8
-	sb.corner_radius_top_right = 8
-	sb.corner_radius_bottom_left = 8
-	sb.corner_radius_bottom_right = 8
-	sb.border_width_left = 2
-	sb.border_width_right = 2
-	sb.border_width_top = 2
-	sb.border_width_bottom = 2
-	sb.border_color = Color(1, 1, 1, 0.6)
-	icon_panel.add_theme_stylebox_override("panel", sb)
 	box.add_child(icon_panel)
 
 	var badge_bg: Panel = null
@@ -790,7 +1182,7 @@ func _add_desktop_icon(parent: Control, default_pos: Vector2, caption: String, t
 						_icon_positions[icon_id] = box.position
 					_on_desktop_icon_dropped(box, icon_id)
 				else:
-					_activate_desktop_icon(box, on_activate)
+					_activate_desktop_icon(box, icon_id, on_activate)
 		elif event is InputEventMouseMotion and drag["active"]:
 			var target: Vector2 = box.get_global_mouse_position() - drag["grab_offset"]
 			target.x = clamp(target.x, 0.0, max(0.0, screen.size.x - box.custom_minimum_size.x))
@@ -808,22 +1200,34 @@ func _add_desktop_icon(parent: Control, default_pos: Vector2, caption: String, t
 
 # Pequeno efeito de "clique" (o ícone encolhe e volta) seguido de um atraso
 # curto antes de a janela do aplicativo realmente abrir.
-func _activate_desktop_icon(box: Control, on_activate: Callable) -> void:
+func _activate_desktop_icon(box: Control, icon_id: String, on_activate: Callable) -> void:
 	var tween := create_tween()
 	tween.tween_property(box, "scale", Vector2(0.85, 0.85), 0.07)
 	tween.tween_property(box, "scale", Vector2(1.0, 1.0), 0.09)
 	var t := get_tree().create_timer(0.16)
 	t.timeout.connect(func():
-		if is_instance_valid(box):
-			on_activate.call()
+		if not is_instance_valid(box):
+			return
+		# Se esse app (email/editor) já está aberto, um segundo clique - ou
+		# um duplo-clique rápido de hábito - só restaura/traz a janela
+		# existente pra frente, em vez de abrir uma SEGUNDA janela por cima
+		# (o que deixava uma órfã sem botão na taskbar ao fechar a outra).
+		if icon_id != "" and _open_windows.has(icon_id) and is_instance_valid(_open_windows[icon_id]):
+			var win: Control = _open_windows[icon_id]
+			win.visible = true
+			if is_instance_valid(window_layer):
+				window_layer.move_child(win, window_layer.get_child_count() - 1)
+			return
+		on_activate.call()
 	)
 
 
-# Chamado quando o jogador solta um ícone depois de arrastá-lo. Só a "Caixa
-# de E-mail" (Outlook Express) e o "Editor de Código" disparam a mecânica da
-# lixeira; os demais ícones apenas ficam na nova posição.
+# Chamado quando o jogador solta um ícone depois de arrastá-lo. "Caixa de
+# E-mail", "Editor de Código" e "Meu Computador" disparam a mecânica da
+# lixeira (excluir de vez, com confirmação); os demais ícones (ex.: a
+# própria Lixeira) apenas ficam na nova posição.
 func _on_desktop_icon_dropped(box: Control, icon_id: String) -> void:
-	if icon_id != "email" and icon_id != "editor":
+	if icon_id != "email" and icon_id != "editor" and icon_id != "computer":
 		return
 	if not is_instance_valid(_trash_icon_box) or _trash_icon_box == box:
 		return
@@ -879,9 +1283,10 @@ func _show_trash_confirm_popup(icon_box: Control, icon_id: String) -> void:
 	btn_row.add_child(confirm_btn)
 
 
-# Exclusão definitiva do ícone (email ou editor). Sem esses dois, o dia de
-# trabalho fica impossível de completar - por isso vai direto pra tela de
-# "Você se demitiu" (ver _show_quit_screen).
+# Exclusão definitiva do ícone. Email e editor tornam o dia de trabalho
+# impossível de completar - por isso vão direto pra tela de "Você se
+# demitiu" (ver _show_quit_screen). "Meu Computador" é só decorativo: some
+# do desktop e pronto, sem nenhuma outra consequência.
 func _delete_desktop_icon(icon_box: Control, icon_id: String) -> void:
 	if icon_id == "email":
 		_email_icon_deleted = true
@@ -889,10 +1294,15 @@ func _delete_desktop_icon(icon_box: Control, icon_id: String) -> void:
 			email_badge.visible = false
 	elif icon_id == "editor":
 		_editor_icon_deleted = true
+	elif icon_id == "computer":
+		_computer_icon_deleted = true
 	_icon_positions.erase(icon_id)
 	if is_instance_valid(icon_box):
 		icon_box.queue_free()
-	_show_quit_screen()
+	if icon_id == "email" or icon_id == "editor":
+		_show_quit_screen()
+	else:
+		_show_toast("Item excluído.")
 
 
 # Limpa toda a personalização da área de trabalho (posições arrastadas e
@@ -901,15 +1311,18 @@ func _reset_desktop_customizations() -> void:
 	_icon_positions.clear()
 	_email_icon_deleted = false
 	_editor_icon_deleted = false
+	_computer_icon_deleted = false
 	_trash_icon_box = null
 
 
 func _build_taskbar() -> void:
+	# Visual "Bricks" (bege/marrom): logo do sistema à esquerda no lugar do
+	# botão "Iniciar", e o relógio à direita dentro de um painelzinho.
 	var bar := Panel.new()
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = C_TASKBAR
+	sb.bg_color = C_TASKBAR_BEIGE
 	sb.border_width_top = 2
-	sb.border_color = Color(0.7, 0.85, 1.0)
+	sb.border_color = C_TASKBAR_BEIGE_BORDER
 	bar.add_theme_stylebox_override("panel", sb)
 	bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	bar.custom_minimum_size = Vector2(0, 36)
@@ -922,31 +1335,295 @@ func _build_taskbar() -> void:
 	hbox.add_theme_constant_override("separation", 10)
 	bar.add_child(hbox)
 
-	var start_btn := Button.new()
-	start_btn.text = "  Iniciar"
-	start_btn.custom_minimum_size = Vector2(90, 32)
-	var start_sb := StyleBoxFlat.new()
-	start_sb.bg_color = C_START_GREEN
-	start_sb.corner_radius_top_right = 10
-	start_sb.corner_radius_bottom_right = 10
-	start_btn.add_theme_stylebox_override("normal", start_sb)
-	start_btn.add_theme_color_override("font_color", Color(1, 1, 1))
-	start_btn.disabled = true # decorativo, só pro clima
-	hbox.add_child(start_btn)
+	# Botão "Iniciar" do Bricks: o símbolo + "BRICKS", clicável - abre o
+	# menuzinho com Voltar ao Menu / Configurações / Sair (ver
+	# _show_bricks_start_menu). Usamos um Control com gui_input (mesmo
+	# padrão dos ícones da área de trabalho) em vez de um Button de verdade,
+	# pra poder controlar o layout interno (ícone + texto) livremente.
+	var logo_margin := MarginContainer.new()
+	logo_margin.add_theme_constant_override("margin_left", 10)
+	logo_margin.add_theme_constant_override("margin_right", 10)
+	logo_margin.mouse_filter = Control.MOUSE_FILTER_STOP
+	logo_margin.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			_show_bricks_start_menu()
+	)
+	hbox.add_child(logo_margin)
+
+	var logo_row := HBoxContainer.new()
+	logo_row.add_theme_constant_override("separation", 8)
+	logo_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	logo_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	logo_margin.add_child(logo_row)
+
+	logo_row.add_child(_make_bricks_logo(22.0))
+
+	var logo_label := Label.new()
+	logo_label.text = "BRICKS"
+	logo_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	logo_label.add_theme_font_size_override("font_size", 18)
+	logo_label.add_theme_color_override("font_color", C_BRICKS_LOGO)
+	logo_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	logo_row.add_child(logo_label)
+
+	# Janelas abertas no momento (email, editor de código - ver
+	# _taskbar_register_window). Reconstruída do zero a cada dia, junto com
+	# o resto da taskbar.
+	_taskbar_buttons.clear()
+	_open_windows.clear()
+	_taskbar_row = HBoxContainer.new()
+	_taskbar_row.add_theme_constant_override("separation", 6)
+	hbox.add_child(_taskbar_row)
 
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hbox.add_child(spacer)
 
+	var clock_panel := Panel.new()
+	var clock_sb := StyleBoxFlat.new()
+	clock_sb.bg_color = C_CLOCK_PANEL_BG
+	clock_sb.border_width_left = 1
+	clock_sb.border_width_top = 1
+	clock_sb.border_width_bottom = 1
+	clock_sb.border_color = C_CLOCK_PANEL_BORDER
+	clock_sb.content_margin_left = 12
+	clock_sb.content_margin_right = 12
+	clock_panel.add_theme_stylebox_override("panel", clock_sb)
+	clock_panel.custom_minimum_size = Vector2(70, 36)
+	hbox.add_child(clock_panel)
+
 	taskbar_clock = Label.new()
-	taskbar_clock.add_theme_color_override("font_color", Color(1, 1, 1))
+	taskbar_clock.add_theme_color_override("font_color", C_BRICKS_LOGO)
+	taskbar_clock.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	taskbar_clock.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	taskbar_clock.set_anchors_preset(Control.PRESET_FULL_RECT)
 	var t: Dictionary = Time.get_time_dict_from_system()
 	taskbar_clock.text = "%02d:%02d" % [t["hour"], t["minute"]]
-	hbox.add_child(taskbar_clock)
+	clock_panel.add_child(taskbar_clock)
 
-	var margin := Control.new()
-	margin.custom_minimum_size = Vector2(12, 0)
-	hbox.add_child(margin)
+
+# ---------------------------------------------------------------------------
+# JANELAS ABERTAS NA BARRA DE TAREFAS (email, editor de código)
+# ---------------------------------------------------------------------------
+# Um botão por "app" (não por janela): a caixa de entrada, por exemplo,
+# recria a janela toda vez que o jogador troca de mensagem
+# (_render_email_window), mas continua sendo o MESMO app aberto - por isso
+# _taskbar_register_window reaproveita o botão existente em vez de duplicar,
+# só atualizando qual é a janela "atual" daquele app.
+func _make_taskbar_app_button(label_text: String) -> Button:
+	var btn := Button.new()
+	btn.text = label_text
+	btn.clip_text = true
+	btn.custom_minimum_size = Vector2(130, 28)
+	btn.add_theme_font_size_override("font_size", 12)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = C_CLOCK_PANEL_BG
+	sb.border_width_left = 1
+	sb.border_width_right = 1
+	sb.border_width_top = 1
+	sb.border_width_bottom = 1
+	sb.border_color = C_CLOCK_PANEL_BORDER
+	sb.corner_radius_top_left = 3
+	sb.corner_radius_top_right = 3
+	sb.corner_radius_bottom_left = 3
+	sb.corner_radius_bottom_right = 3
+	# Mesmo estilo em todo estado do botão, senão o Godot usa o padrão
+	# (azul/cinza) pra hover/pressed/focus, destoando da paleta bege.
+	btn.add_theme_stylebox_override("normal", sb)
+	btn.add_theme_stylebox_override("hover", sb)
+	btn.add_theme_stylebox_override("pressed", sb)
+	btn.add_theme_stylebox_override("focus", sb)
+	btn.add_theme_color_override("font_color", C_BRICKS_LOGO)
+	btn.add_theme_color_override("font_hover_color", C_BRICKS_LOGO)
+	btn.add_theme_color_override("font_pressed_color", C_BRICKS_LOGO)
+	btn.add_theme_color_override("font_focus_color", C_BRICKS_LOGO)
+	return btn
+
+
+# Registra (ou atualiza) o botão de um app na taskbar. Chame sempre que uma
+# janela desse app for criada/recriada - se já existir um botão pra esse
+# icon_id, só troca a janela "atual" e o texto, sem duplicar.
+func _taskbar_register_window(icon_id: String, label: String, win: Control) -> void:
+	_open_windows[icon_id] = win
+	if _taskbar_buttons.has(icon_id) and is_instance_valid(_taskbar_buttons[icon_id]):
+		_taskbar_buttons[icon_id].text = label
+		return
+	if not is_instance_valid(_taskbar_row):
+		return
+	var btn := _make_taskbar_app_button(label)
+	btn.pressed.connect(func(): _on_taskbar_app_button_pressed(icon_id))
+	_taskbar_row.add_child(btn)
+	_taskbar_buttons[icon_id] = btn
+
+
+# Remove o botão de um app da taskbar (chamado quando a janela é realmente
+# fechada, não só recriada - ver os close_button/"Fechar" do email e do
+# editor).
+func _taskbar_unregister_window(icon_id: String) -> void:
+	_open_windows.erase(icon_id)
+	if _taskbar_buttons.has(icon_id):
+		var btn = _taskbar_buttons[icon_id]
+		if is_instance_valid(btn):
+			btn.queue_free()
+		_taskbar_buttons.erase(icon_id)
+
+
+# Clique no botão da taskbar: minimiza (esconde) se a janela estiver
+# visível, ou restaura e traz pra frente se estiver minimizada.
+func _on_taskbar_app_button_pressed(icon_id: String) -> void:
+	if not _open_windows.has(icon_id):
+		return
+	var win: Control = _open_windows[icon_id]
+	if not is_instance_valid(win):
+		_taskbar_unregister_window(icon_id)
+		return
+	if win.visible:
+		win.visible = false
+	else:
+		win.visible = true
+		window_layer.move_child(win, window_layer.get_child_count() - 1)
+		win.grab_focus()
+
+
+# Limpa todos os botões/janelas registrados na taskbar de uma vez - usado
+# quando TODAS as janelas são fechadas de propósito (fim de corrida, tela de
+# "Você se demitiu"), sem passar pelo close_button de cada uma.
+func _clear_taskbar_windows() -> void:
+	for icon_id in _taskbar_buttons.keys():
+		var btn = _taskbar_buttons[icon_id]
+		if is_instance_valid(btn):
+			btn.queue_free()
+	_taskbar_buttons.clear()
+	_open_windows.clear()
+
+
+# ---------------------------------------------------------------------------
+# MENU DO BOTÃO "BRICKS" (Voltar ao Menu / Configurações / Sair)
+# ---------------------------------------------------------------------------
+func _show_bricks_start_menu() -> void:
+	# Clicar de novo no símbolo com o menu já aberto funciona como fechar
+	# (mesmo esquema de um menu Iniciar de verdade).
+	if is_instance_valid(_start_menu_popup):
+		_close_bricks_start_menu()
+		return
+
+	# Overlay invisível cobrindo a tela toda: clicar em qualquer lugar fora
+	# do menuzinho fecha ele (mesmo truque usado em menus popup nativos).
+	var overlay := Control.new()
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	overlay.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.pressed:
+			_close_bricks_start_menu()
+	)
+	window_layer.add_child(overlay)
+
+	var menu := Panel.new()
+	var msb := StyleBoxFlat.new()
+	msb.bg_color = C_TASKBAR_BEIGE
+	msb.border_width_left = 1
+	msb.border_width_right = 1
+	msb.border_width_top = 1
+	msb.border_width_bottom = 1
+	msb.border_color = C_TASKBAR_BEIGE_BORDER
+	menu.add_theme_stylebox_override("panel", msb)
+	# 3 itens de 30px + 2 espaços de 4px entre eles + 12px de margem (6 em
+	# cima, 6 embaixo) - ver margin/vbox logo abaixo.
+	var menu_size := Vector2(190, 3 * 30 + 2 * 4 + 12)
+	menu.custom_minimum_size = menu_size
+	menu.size = menu_size
+	menu.position = Vector2(8, screen.size.y - 36 - menu_size.y - 4)
+	# Consome o clique nela mesma, pra não vazar pro overlay por trás e
+	# fechar o menu ao clicar num item.
+	menu.mouse_filter = Control.MOUSE_FILTER_STOP
+	overlay.add_child(menu)
+
+	var vbox := VBoxContainer.new()
+	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vbox.add_theme_constant_override("separation", 4)
+	var margin := MarginContainer.new()
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 6)
+	margin.add_theme_constant_override("margin_top", 6)
+	margin.add_theme_constant_override("margin_right", 6)
+	margin.add_theme_constant_override("margin_bottom", 6)
+	menu.add_child(margin)
+	margin.add_child(vbox)
+
+	var btn_menu := _make_start_menu_item("Voltar ao Menu")
+	btn_menu.pressed.connect(func():
+		_close_bricks_start_menu()
+		_on_start_menu_return_to_main()
+	)
+	vbox.add_child(btn_menu)
+
+	var btn_config := _make_start_menu_item("Configurações")
+	btn_config.pressed.connect(func():
+		_close_bricks_start_menu()
+		_on_start_menu_open_config()
+	)
+	vbox.add_child(btn_config)
+
+	var btn_exit := _make_start_menu_item("Sair")
+	btn_exit.pressed.connect(func(): get_tree().quit())
+	vbox.add_child(btn_exit)
+
+	_start_menu_popup = overlay
+
+
+func _close_bricks_start_menu() -> void:
+	if is_instance_valid(_start_menu_popup):
+		_start_menu_popup.queue_free()
+	_start_menu_popup = null
+
+
+func _make_start_menu_item(label_text: String) -> Button:
+	var btn := Button.new()
+	btn.text = label_text
+	btn.custom_minimum_size = Vector2(0, 30)
+	btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	btn.add_theme_constant_override("h_separation", 0)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0, 0, 0, 0)
+	sb.content_margin_left = 10
+	var hover_sb := StyleBoxFlat.new()
+	hover_sb.bg_color = C_CLOCK_PANEL_BG
+	hover_sb.content_margin_left = 10
+	hover_sb.corner_radius_top_left = 3
+	hover_sb.corner_radius_top_right = 3
+	hover_sb.corner_radius_bottom_left = 3
+	hover_sb.corner_radius_bottom_right = 3
+	btn.add_theme_stylebox_override("normal", sb)
+	btn.add_theme_stylebox_override("focus", sb)
+	btn.add_theme_stylebox_override("hover", hover_sb)
+	btn.add_theme_stylebox_override("pressed", hover_sb)
+	btn.add_theme_color_override("font_color", C_BRICKS_LOGO)
+	btn.add_theme_color_override("font_hover_color", C_BRICKS_LOGO)
+	btn.add_theme_color_override("font_pressed_color", C_BRICKS_LOGO)
+	btn.add_theme_color_override("font_focus_color", C_BRICKS_LOGO)
+	return btn
+
+
+# "Voltar ao Menu": encerra o que estiver rolando na corrida/sabotagem e
+# volta pra tela principal, SEM resetar o progresso da campanha (o dia
+# atual continua o mesmo - clicar em START de novo retoma daqui).
+func _on_start_menu_return_to_main() -> void:
+	race_active = false
+	_sabotage.stop()
+	_close_all_sabotage_windows()
+	_stop_menu_music()
+	_show_main_menu()
+
+
+func _on_start_menu_open_config() -> void:
+	race_active = false
+	_sabotage.stop()
+	_close_all_sabotage_windows()
+	# Passa _build_desktop como "pra onde voltar": o RETURN da config leva
+	# direto pro desktop do MESMO dia (current_day não muda em nenhum
+	# momento desse fluxo), sem passar pelo menu principal nem replayer o
+	# boot/transição de dia inteiros de novo.
+	_show_config_menu(_build_desktop)
 
 
 func _show_toast(msg: String) -> void:
@@ -1071,17 +1748,45 @@ func _show_system_notification(unread_count: int) -> void:
 # ---------------------------------------------------------------------------
 # JANELA GENÉRICA (estilo XP) - usada pelo e-mail e pelo editor
 # ---------------------------------------------------------------------------
+# Botão invisível (sem texto/estilo próprio) posicionado exatamente em cima
+# de um dos ícones já desenhados na moldura (X, restaurar, traço). Só existe
+# pra captar o clique - o desenho do botão em si já está na imagem, então
+# nada é redesenhado por cima (evita o efeito "amassado"/duplicado).
+func _make_chrome_button(rect: Rect2) -> Button:
+	var btn := Button.new()
+	btn.position = rect.position
+	btn.size = rect.size
+	btn.custom_minimum_size = rect.size
+	btn.flat = true
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	var empty_sb := StyleBoxEmpty.new()
+	btn.add_theme_stylebox_override("normal", empty_sb)
+	btn.add_theme_stylebox_override("hover", empty_sb)
+	btn.add_theme_stylebox_override("pressed", empty_sb)
+	btn.add_theme_stylebox_override("focus", empty_sb)
+	btn.add_theme_stylebox_override("disabled", empty_sb)
+	return btn
+
+
 func _make_window(title: String, size: Vector2) -> Dictionary:
 	var win := Panel.new()
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = C_WINDOW_BG
-	sb.border_width_left = 2
-	sb.border_width_right = 2
-	sb.border_width_bottom = 2
-	sb.border_color = Color(0.05, 0.2, 0.55)
-	sb.corner_radius_top_left = 6
-	sb.corner_radius_top_right = 6
-	win.add_theme_stylebox_override("panel", sb)
+	# Se a moldura pixel art existir, ela vira o visual de verdade da janela
+	# (ver NinePatchRect logo abaixo) - o Panel em si fica só como área de
+	# clique/arraste, sem desenhar nada por cima da arte.
+	var use_frame_image := ResourceLoader.exists(WINDOW_FRAME_IMAGE_PATH)
+	if use_frame_image:
+		win.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	else:
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = C_WINDOW_BG
+		sb.border_width_left = 2
+		sb.border_width_right = 2
+		sb.border_width_bottom = 2
+		sb.border_color = Color(0.05, 0.2, 0.55)
+		sb.corner_radius_top_left = 6
+		sb.corner_radius_top_right = 6
+		win.add_theme_stylebox_override("panel", sb)
 	win.custom_minimum_size = size
 	win.size = size
 	win.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -1089,39 +1794,89 @@ func _make_window(title: String, size: Vector2) -> Dictionary:
 	if win.position.y < 4:
 		win.position.y = 4
 
-	var titlebar := Panel.new()
-	var tsb := StyleBoxFlat.new()
-	tsb.bg_color = C_TITLEBAR_A
-	tsb.corner_radius_top_left = 6
-	tsb.corner_radius_top_right = 6
-	titlebar.add_theme_stylebox_override("panel", tsb)
-	titlebar.custom_minimum_size = Vector2(size.x, 28)
-	titlebar.size = Vector2(size.x, 28)
-	titlebar.mouse_filter = Control.MOUSE_FILTER_STOP
-	win.add_child(titlebar)
+	var content_top: float = WINDOW_FRAME_MARGIN_TOP if use_frame_image else 28.0
+
+	if use_frame_image:
+		# NinePatchRect: preserva os cantos e a faixa de título (com os 3
+		# botões já desenhados) no tamanho original, e estica só o miolo
+		# (um preenchimento de cor sólida, sem nenhuma linha atravessando)
+		# pra caber em qualquer tamanho de janela sem amassar.
+		var frame := NinePatchRect.new()
+		frame.texture = load(WINDOW_FRAME_IMAGE_PATH)
+		frame.set_anchors_preset(Control.PRESET_FULL_RECT)
+		frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		frame.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		frame.patch_margin_left = WINDOW_FRAME_MARGIN_LEFT
+		frame.patch_margin_top = WINDOW_FRAME_MARGIN_TOP
+		frame.patch_margin_right = WINDOW_FRAME_MARGIN_RIGHT
+		frame.patch_margin_bottom = WINDOW_FRAME_MARGIN_BOTTOM
+		win.add_child(frame)
+	else:
+		var fallback_titlebar := Panel.new()
+		var tsb := StyleBoxFlat.new()
+		tsb.bg_color = C_TITLEBAR_A
+		tsb.corner_radius_top_left = 6
+		tsb.corner_radius_top_right = 6
+		fallback_titlebar.add_theme_stylebox_override("panel", tsb)
+		fallback_titlebar.size = Vector2(size.x, content_top)
+		fallback_titlebar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		win.add_child(fallback_titlebar)
 
 	var title_label := Label.new()
 	title_label.text = title
-	title_label.add_theme_color_override("font_color", Color(1, 1, 1))
-	title_label.position = Vector2(8, 4)
-	titlebar.add_child(title_label)
+	# Alinhado à esquerda, logo depois do botão de fechar (em vez de
+	# centralizado sobre a janela toda) - mesmo layout do molde: ícone,
+	# depois o nome do app colado ao lado.
+	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	title_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	title_label.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	title_label.offset_bottom = content_top
+	title_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title_label.add_theme_font_override("font", _get_window_title_font())
+	if use_frame_image:
+		title_label.offset_left = WINDOW_FRAME_CLOSE_RECT.position.x + WINDOW_FRAME_CLOSE_RECT.size.x + 12
+		title_label.add_theme_color_override("font_color", Color(0.067, 0.2, 0.318))
+		title_label.add_theme_font_size_override("font_size", 15)
+	else:
+		title_label.offset_left = 8
+		title_label.add_theme_color_override("font_color", Color(1, 1, 1))
+		title_label.add_theme_font_size_override("font_size", 14)
+	win.add_child(title_label)
 
-	var close_btn := Button.new()
-	close_btn.text = "X"
-	close_btn.custom_minimum_size = Vector2(24, 22)
-	close_btn.position = Vector2(size.x - 30, 3)
-	titlebar.add_child(close_btn)
+	# Área de arraste = a faixa de título inteira. Os 3 botões (quando a
+	# moldura existe) são filhos dela e "roubam" o clique antes que vire
+	# arraste - por isso não é preciso excluir a região deles manualmente.
+	var titlebar_drag := Control.new()
+	titlebar_drag.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	titlebar_drag.offset_bottom = content_top
+	titlebar_drag.mouse_filter = Control.MOUSE_FILTER_STOP
+	win.add_child(titlebar_drag)
+	_make_draggable(win, titlebar_drag)
 
-	_make_draggable(win, titlebar)
+	# Só o botão de fechar é funcional - maximizar/minimizar foi removido
+	# (o resto da arte na barra de título é só decorativo, se houver).
+	var close_btn: Button
+	if use_frame_image:
+		# Invisível, exatamente sobre o ícone de fechar já desenhado na
+		# moldura (ver WINDOW_FRAME_CLOSE_RECT no topo do arquivo).
+		close_btn = _make_chrome_button(WINDOW_FRAME_CLOSE_RECT)
+	else:
+		# Sem a moldura, cai num "X" simples no canto (visual de sempre).
+		close_btn = Button.new()
+		close_btn.text = "X"
+		close_btn.custom_minimum_size = Vector2(24, 22)
+		close_btn.position = Vector2(size.x - 30, 3)
+	titlebar_drag.add_child(close_btn)
 
 	window_layer.add_child(win)
 
 	var content := Control.new()
-	content.position = Vector2(0, 28)
-	content.size = Vector2(size.x, size.y - 28)
+	content.set_anchors_preset(Control.PRESET_FULL_RECT)
+	content.offset_top = content_top
+	content.clip_contents = true
 	win.add_child(content)
 
-	return {"window": win, "titlebar": titlebar, "content": content, "close_button": close_btn}
+	return {"window": win, "titlebar": titlebar_drag, "content": content, "close_button": close_btn}
 
 
 func _make_draggable(win: Control, handle: Control) -> void:
@@ -1174,6 +1929,10 @@ func _render_email_window(selected_index: int) -> void:
 	var built := _make_window("Caixa de Entrada - Outlook Express", Vector2(680, 440))
 	var content: Control = built["content"]
 	var win: Control = built["window"]
+	# A janela é recriada a cada troca de mensagem (win.queue_free() +
+	# _render_email_window de novo), mas continua sendo o MESMO app aberto -
+	# _taskbar_register_window só atualiza a referência, sem duplicar botão.
+	_taskbar_register_window("email", "Caixa de Entrada", win)
 
 	var hbox := HBoxContainer.new()
 	hbox.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -1336,12 +2095,14 @@ func _render_email_window(selected_index: int) -> void:
 	close_btn.pressed.connect(func():
 		win.queue_free()
 		state = State.DESKTOP
+		_taskbar_unregister_window("email")
 	)
 	right_vbox.add_child(close_btn)
 
 	built["close_button"].pressed.connect(func():
 		win.queue_free()
 		state = State.DESKTOP
+		_taskbar_unregister_window("email")
 	)
 
 func _on_sabotage_popup_requested(kind: String, _payload: Dictionary) -> void:
@@ -1428,8 +2189,11 @@ func _open_editor() -> void:
 	race_ai_stutter_timer = 0.0
 	race_finished = false
 
-	# reinicia cronômetro e contadores de precisão
-	race_start_msec = Time.get_ticks_msec()
+	# reinicia cronômetro e contadores de precisão - o cronômetro em si só
+	# começa a contar de fato quando o jogador digitar o primeiro caractere
+	# (ver race_started_typing em _on_race_text_changed).
+	race_start_msec = 0
+	race_started_typing = false
 	race_prev_input = ""
 	race_total_typed = 0
 	race_error_typed = 0
@@ -1600,14 +2364,16 @@ func _open_editor() -> void:
 
 
 	var win: Control = built["window"]
+	_taskbar_register_window("editor", "Editor de Código", win)
 	built["close_button"].pressed.connect(func():
 		race_active = false
 		_sabotage.stop()
 		_close_all_sabotage_windows()
 		win.queue_free()
 		state = State.DESKTOP
+		_taskbar_unregister_window("editor")
 	)
-	
+
 
 	_refresh_target_display("")
 	race_active = true
@@ -1723,6 +2489,9 @@ func _on_race_text_changed() -> void:
 	if not race_active or race_finished:
 		return
 	var typed := race_input.text
+	if not race_started_typing and typed.length() > 0:
+		race_started_typing = true
+		race_start_msec = Time.get_ticks_msec()
 	_track_typing_accuracy(typed)
 	var correct_len := _longest_correct_prefix(typed, race_code)
 	race_player_bar.value = correct_len
@@ -1810,6 +2579,7 @@ func _show_result(player_won: bool) -> void:
 	state = State.RESULT
 	for c in window_layer.get_children():
 		c.queue_free()
+	_clear_taskbar_windows()
 
 	# Se venceu, current_day já avançou dentro de register_win(); pegamos a
 	# config do dia que acabou de terminar para exibir a fala certa do chefe.
@@ -2038,6 +2808,7 @@ func _show_quit_screen() -> void:
 
 	for c in window_layer.get_children():
 		c.queue_free()
+	_clear_taskbar_windows()
 	for c in screen.get_children():
 		c.queue_free()
 
