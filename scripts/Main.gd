@@ -5,8 +5,13 @@ extends Control
 ## monitor CRT onde roda um desktop no estilo Windows XP.
 ##
 ## Fluxo de estados:
-##   BOOT -> DESKTOP -> EMAIL (recado do chefe) -> RACE (typeracer) ->
+##   MENU -> (transição) -> DESKTOP -> EMAIL (recado do chefe) -> RACE (typeracer) ->
 ##   RESULT (venceu/perdeu) -> volta pro DESKTOP, ou FIRED / VICTORY no fim.
+##
+## Estrutura da campanha (ver GameManager.gd):
+##   Dia 0 é treinamento, sem oponente de IA. Ao vencer o Dia 0, o jogo
+##   mostra uma transição extra ("2 anos depois...") antes de cair no Dia 1,
+##   quando a ChatBot-1000 entra em ação de verdade.
 
 enum State { MENU, CONFIG_MENU, BOOT, DESKTOP, EMAIL, RACE, RESULT, FIRED, VICTORY }
 
@@ -37,6 +42,30 @@ const C_ERROR := Color(0.80, 0.10, 0.10)
 const NOTIFICATION_SOUND_PATH := "res://assets/sfx/notification.wav"
 
 # ---------------------------------------------------------------------------
+# Som de clique (retro) - toca em QUALQUER clique esquerdo do jogo: botões
+# de menu, ícones da área de trabalho, abrir/fechar janelas, etc. Basta
+# colocar o arquivo definitivo nesse caminho; enquanto ele não existir, o
+# jogo não toca nada (sem erro).
+# ---------------------------------------------------------------------------
+const CLICK_SOUND_PATH := "res://assets/sfx/click.wav"
+
+# ---------------------------------------------------------------------------
+# Música do menu principal - toca em loop enquanto o jogador está no MENU ou
+# no CONFIG_MENU, e some com um fade curto assim que a campanha começa. Se o
+# arquivo ainda não existir, o jogo simplesmente fica em silêncio.
+# ---------------------------------------------------------------------------
+const MENU_MUSIC_PATH := "res://assets/music/menu_theme.ogg"
+
+# ---------------------------------------------------------------------------
+# Imagens de fundo (wallpapers) - opcionais. Se o arquivo não existir ainda
+# (os desenhos estão sendo feitos por outro membro da equipe), cai no fundo
+# de cor sólida de sempre, sem erro nenhum. Quando o arquivo chegar, é só
+# colocar nesse caminho que passa a aparecer automaticamente.
+# ---------------------------------------------------------------------------
+const MENU_BG_IMAGE_PATH := "res://assets/images/menu_background.png"
+const DESKTOP_BG_IMAGE_PATH := "res://assets/images/desktop_wallpaper.png"
+
+# ---------------------------------------------------------------------------
 # Fonte de código (JetBrains Mono Nerd Font, com fallback)
 # ---------------------------------------------------------------------------
 # Se um arquivo .ttf/.otf da JetBrains Mono Nerd Font for colocado nesse
@@ -63,6 +92,8 @@ var taskbar_clock: Label
 var email_icon_flash: bool = false
 var email_badge: Control
 var _notification_player: AudioStreamPlayer
+var _click_player: AudioStreamPlayer
+var _menu_music_player: AudioStreamPlayer
 
 # --- Variáveis da corrida (race) ---
 var race_code: String = ""
@@ -77,6 +108,9 @@ var race_ai_stutter_chance: float = 0.1
 var race_ai_stutter_timer: float = 0.0
 var race_finished: bool = false
 var race_active: bool = false
+# Se falso (Dia 0 - treinamento), a corrida roda sem oponente de IA: sem
+# barra da IA, sem derrota possível, só o jogador praticando no próprio ritmo.
+var race_ai_active: bool = true
 
 
 func _ready() -> void:
@@ -84,13 +118,93 @@ func _ready() -> void:
 	custom_minimum_size = Vector2(1280, 720)
 	_notification_player = AudioStreamPlayer.new()
 	add_child(_notification_player)
+	_click_player = AudioStreamPlayer.new()
+	add_child(_click_player)
+	_menu_music_player = AudioStreamPlayer.new()
+	add_child(_menu_music_player)
+	_menu_music_player.finished.connect(_on_menu_music_finished)
 	_build_monitor_frame()
 	_show_main_menu()
 
 
 func _process(delta: float) -> void:
-	if race_active and not race_finished:
+	if race_active and not race_finished and race_ai_active:
 		_update_ai_progress(delta)
+
+
+# ---------------------------------------------------------------------------
+# SOM DE CLIQUE GLOBAL
+# ---------------------------------------------------------------------------
+# Usamos _input (não _unhandled_input) de propósito: assim o clique soa
+# sempre, mesmo quando o botão/ícone/janela abaixo do cursor "consome" o
+# evento (o que aconteceria com _unhandled_input). Cobre literalmente
+# qualquer clique esquerdo do jogo - menu, ícones da área de trabalho, abrir
+# app, fechar janela, etc. - sem precisar conectar som em cada botão.
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		_play_click_sound()
+
+
+func _play_click_sound() -> void:
+	if not ResourceLoader.exists(CLICK_SOUND_PATH):
+		# Sem arquivo definitivo ainda: não toca nada, sem erro. Basta colocar
+		# um .wav/.ogg em CLICK_SOUND_PATH quando o som retro estiver pronto.
+		return
+	if _click_player.stream == null:
+		_click_player.stream = load(CLICK_SOUND_PATH)
+	# Pequena variação aleatória de pitch a cada clique: dá uma sensação mais
+	# "mecânica/retro" (tecla física) em vez do exact mesmo som toda vez.
+	_click_player.pitch_scale = randf_range(0.92, 1.08)
+	_click_player.play()
+
+
+# ---------------------------------------------------------------------------
+# MÚSICA DO MENU
+# ---------------------------------------------------------------------------
+func _play_menu_music() -> void:
+	if not ResourceLoader.exists(MENU_MUSIC_PATH):
+		return
+	if _menu_music_player.stream == null:
+		_menu_music_player.stream = load(MENU_MUSIC_PATH)
+	if not _menu_music_player.playing:
+		_menu_music_player.volume_db = 0.0
+		_menu_music_player.play()
+
+
+func _stop_menu_music() -> void:
+	if not _menu_music_player.playing:
+		return
+	var tween := create_tween()
+	tween.tween_property(_menu_music_player, "volume_db", -40.0, 0.5)
+	tween.tween_callback(_menu_music_player.stop)
+	tween.tween_callback(func(): _menu_music_player.volume_db = 0.0)
+
+
+func _on_menu_music_finished() -> void:
+	# Faz a música voltar ao início e continuar (loop manual), mas só
+	# enquanto ainda estivermos numa tela de menu - evita que ela volte a
+	# tocar sozinha se _stop_menu_music() já tiver sido chamada.
+	if state == State.MENU or state == State.CONFIG_MENU:
+		_menu_music_player.play()
+
+
+# ---------------------------------------------------------------------------
+# FUNDO (cor sólida ou imagem, se já existir)
+# ---------------------------------------------------------------------------
+func _make_background(color_fallback: Color, image_path: String) -> Control:
+	if ResourceLoader.exists(image_path):
+		var tex_rect := TextureRect.new()
+		tex_rect.texture = load(image_path)
+		tex_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tex_rect.stretch_mode = TextureRect.STRETCH_SCALE
+		tex_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+		tex_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		return tex_rect
+	var rect := ColorRect.new()
+	rect.color = color_fallback
+	rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return rect
 
 
 # ---------------------------------------------------------------------------
@@ -178,10 +292,10 @@ func _show_main_menu() -> void:
 	for c in screen.get_children():
 		c.queue_free()
 
-	var bg := ColorRect.new()
-	bg.color = C_DESKTOP.darkened(0.45)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var bg := _make_background(C_DESKTOP.darkened(0.45), MENU_BG_IMAGE_PATH)
 	screen.add_child(bg)
+
+	_play_menu_music()
 
 	var vbox := VBoxContainer.new()
 	vbox.custom_minimum_size = Vector2(320, 0)
@@ -234,10 +348,12 @@ func _show_config_menu() -> void:
 	for c in screen.get_children():
 		c.queue_free()
 
-	var bg := ColorRect.new()
-	bg.color = C_DESKTOP.darkened(0.45)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var bg := _make_background(C_DESKTOP.darkened(0.45), MENU_BG_IMAGE_PATH)
 	screen.add_child(bg)
+
+	# A música do menu continua tocando aqui (só reinicia se, por algum
+	# motivo, tiver parado) - CONFIG_MENU ainda conta como "tela de menu".
+	_play_menu_music()
 
 	var vbox := VBoxContainer.new()
 	vbox.custom_minimum_size = Vector2(320, 0)
@@ -271,23 +387,27 @@ func _show_config_menu() -> void:
 
 
 func _on_menu_start_pressed() -> void:
+	_stop_menu_music()
 	var cfg: Dictionary = GameManager.get_current_config()
-	_play_day_transition(cfg["title"], func():
+	_play_day_transition_for_cfg(cfg, func():
 		_build_desktop()
 	)
 
 
 # ---------------------------------------------------------------------------
-# TRANSIÇÃO DE DIA (tela preta com o título do dia -> some revelando o monitor)
+# TRANSIÇÃO DE DIA (tela preta com o(s) texto(s) do dia -> some revelando o
+# monitor)
 # ---------------------------------------------------------------------------
 # 1) um overlay preto cobre a tela (fade-in do preto)
-# 2) o texto do dia aparece por cima
-# 3) segura um instante pro jogador ler
-# 4) por trás do overlay (ainda opaco), troca o conteúdo da tela via
+# 2) cada texto da sequência aparece, segura um instante e (exceto o último)
+#    some antes do próximo aparecer - isso é o que permite encadear algo como
+#    ["2 anos depois...", "Dia 1 - De volta ao trabalho"] numa única
+#    transição contínua, sem precisar clarear o monitor no meio.
+# 3) por trás do overlay (ainda opaco), troca o conteúdo da tela via
 #    "on_fully_covered" (ex.: construir o desktop)
-# 5) o overlay (preto + texto) desaparece suavemente, revelando o que foi
-#    construído no passo 4
-func _play_day_transition(day_text: String, on_fully_covered: Callable) -> void:
+# 4) o overlay (preto + texto) desaparece suavemente, revelando o que foi
+#    construído no passo 3
+func _play_multi_text_transition(texts: Array, on_fully_covered: Callable) -> void:
 	var overlay := ColorRect.new()
 	overlay.color = Color(0, 0, 0, 0)
 	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -295,7 +415,7 @@ func _play_day_transition(day_text: String, on_fully_covered: Callable) -> void:
 	transition_layer.add_child(overlay)
 
 	var day_label := Label.new()
-	day_label.text = day_text
+	day_label.text = ""
 	day_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	day_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	day_label.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -308,10 +428,18 @@ func _play_day_transition(day_text: String, on_fully_covered: Callable) -> void:
 	var tween := create_tween()
 	# fade pro preto
 	tween.tween_property(overlay, "color:a", 1.0, 0.35)
-	# texto do dia surge
-	tween.tween_property(day_label, "modulate:a", 1.0, 0.45)
-	# segura a tela preta com o texto por um instante
-	tween.tween_interval(0.9)
+
+	for i in range(texts.size()):
+		var txt: String = texts[i]
+		tween.tween_callback(func(): day_label.text = txt)
+		# texto atual surge
+		tween.tween_property(day_label, "modulate:a", 1.0, 0.45)
+		# segura a tela preta com o texto por um instante
+		tween.tween_interval(0.9)
+		if i < texts.size() - 1:
+			# some pra dar lugar ao próximo texto da sequência
+			tween.tween_property(day_label, "modulate:a", 0.0, 0.3)
+
 	# troca o conteúdo da "screen" por trás do overlay (que está numa camada
 	# separada, então não é afetado pela limpeza de filhos que essas funções
 	# fazem em "screen")
@@ -320,6 +448,18 @@ func _play_day_transition(day_text: String, on_fully_covered: Callable) -> void:
 	tween.tween_property(day_label, "modulate:a", 0.0, 0.25)
 	tween.parallel().tween_property(overlay, "color:a", 0.0, 0.7)
 	tween.tween_callback(overlay.queue_free)
+
+
+# Monta a sequência de textos de um dia (pre_transition + título do próprio
+# dia) e dispara a transição. Use esta função em vez de chamar
+# _play_multi_text_transition diretamente sempre que a transição for a de
+# "entrar num dia" da campanha.
+func _play_day_transition_for_cfg(cfg: Dictionary, on_fully_covered: Callable) -> void:
+	var texts: Array = []
+	for t in cfg.get("pre_transition", []):
+		texts.append(t)
+	texts.append(cfg["title"])
+	_play_multi_text_transition(texts, on_fully_covered)
 
 
 # Sem uso direto no fluxo atual (o START agora vai direto pra transição de
@@ -352,9 +492,7 @@ func _build_desktop() -> void:
 	for c in screen.get_children():
 		c.queue_free()
 
-	var bg := ColorRect.new()
-	bg.color = C_DESKTOP
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var bg := _make_background(C_DESKTOP, DESKTOP_BG_IMAGE_PATH)
 	screen.add_child(bg)
 
 	desktop_layer = Control.new()
@@ -689,11 +827,21 @@ func _make_draggable(win: Control, handle: Control) -> void:
 
 
 # ---------------------------------------------------------------------------
-# E-MAIL DO CHEFE
+# E-MAIL DO CHEFE (e demais remetentes)
 # ---------------------------------------------------------------------------
+# Cada dia pode ter mais de um e-mail (ex.: Dia 1 tem o comunicado do RH
+# sobre corte de custos, seguido do e-mail do chefe apresentando a
+# ChatBot-1000). _open_email mostra sempre o próximo não lido; o botão
+# avança pra próxima mensagem da fila, ou fecha a caixa de entrada quando
+# não sobra nenhuma. O "X" da janela pula direto pra área de trabalho,
+# marcando tudo como lido (não trava o jogador preso na caixa de entrada).
 func _open_email() -> void:
 	state = State.EMAIL
-	var cfg: Dictionary = GameManager.get_current_config()
+	_render_email_window()
+
+
+func _render_email_window() -> void:
+	var email: Dictionary = GameManager.get_current_email()
 	var built := _make_window("Caixa de Entrada - Outlook Express", Vector2(560, 340))
 	var content: Control = built["content"]
 
@@ -710,7 +858,7 @@ func _open_email() -> void:
 	margin.add_child(vbox)
 
 	var header := Label.new()
-	header.text = "De: Seu Chefe <chefe@codecorp.com>\nAssunto: %s" % cfg["title"]
+	header.text = "De: %s\nAssunto: %s" % [email["from"], email["subject"]]
 	header.add_theme_color_override("font_color", C_TEXT_DARK)
 	vbox.add_child(header)
 
@@ -718,32 +866,51 @@ func _open_email() -> void:
 	vbox.add_child(sep)
 
 	var body := Label.new()
-	body.text = cfg["boss_intro"]
+	body.text = email["body"]
 	body.autowrap_mode = TextServer.AUTOWRAP_WORD
 	body.add_theme_color_override("font_color", C_TEXT_DARK)
 	body.custom_minimum_size = Vector2(520, 140)
 	vbox.add_child(body)
 
+	var remaining_after_this: int = GameManager.unread_email_count - 1
 	var footer := Label.new()
-	footer.text = "Abra o Editor de Código na área de trabalho quando estiver pronto."
+	if remaining_after_this > 0:
+		footer.text = "Você tem mais %d mensagem(ns) na caixa de entrada." % remaining_after_this
+	else:
+		footer.text = "Abra o Editor de Código na área de trabalho quando estiver pronto."
 	footer.add_theme_color_override("font_color", Color(0.3, 0.3, 0.3))
 	footer.add_theme_font_size_override("font_size", 12)
 	vbox.add_child(footer)
 
 	var ok_btn := Button.new()
-	ok_btn.text = "Entendido"
-	ok_btn.custom_minimum_size = Vector2(120, 32)
+	ok_btn.text = "Próxima mensagem" if remaining_after_this > 0 else "Entendido"
+	ok_btn.custom_minimum_size = Vector2(150, 32)
 	vbox.add_child(ok_btn)
 
 	var win: Control = built["window"]
-	var close := func():
+
+	# "Entendido"/"Próxima mensagem": lê UMA mensagem por vez, encadeando pra
+	# próxima da fila até acabar.
+	var read_next := func():
+		win.queue_free()
+		GameManager.unread_email_count -= 1
+		if GameManager.unread_email_count > 0:
+			_render_email_window()
+		else:
+			if is_instance_valid(email_badge):
+				email_badge.visible = false
+			state = State.DESKTOP
+	ok_btn.pressed.connect(read_next)
+
+	# "X": fecha a caixa de entrada de uma vez, marcando tudo como lido (não
+	# deixa o jogador travado sem conseguir voltar pra área de trabalho).
+	var close_all := func():
 		GameManager.unread_email_count = 0
 		if is_instance_valid(email_badge):
 			email_badge.visible = false
 		win.queue_free()
 		state = State.DESKTOP
-	ok_btn.pressed.connect(close)
-	built["close_button"].pressed.connect(close)
+	built["close_button"].pressed.connect(close_all)
 
 
 func _try_open_editor() -> void:
@@ -760,6 +927,7 @@ func _open_editor() -> void:
 	state = State.RACE
 	var cfg: Dictionary = GameManager.get_current_config()
 	race_code = cfg["code"]
+	race_ai_active = cfg.get("ai_active", true)
 	race_ai_wpm = float(cfg["ai_wpm"])
 	race_ai_stutter_chance = float(cfg["ai_stutter_chance"])
 	race_ai_progress_chars = 0.0
@@ -782,7 +950,10 @@ func _open_editor() -> void:
 	margin.add_child(vbox)
 
 	var instructions := Label.new()
-	instructions.text = "%s — Digite o código abaixo mais rápido que a CodeBot-3000!" % cfg["title"]
+	if race_ai_active:
+		instructions.text = "%s — Digite o código abaixo mais rápido que a %s!" % [cfg["title"], GameManager.AI_NAME]
+	else:
+		instructions.text = "%s — Pratique digitando o código abaixo. Sem pressa, hoje é só treino." % cfg["title"]
 	instructions.add_theme_color_override("font_color", C_TEXT_DARK)
 	vbox.add_child(instructions)
 
@@ -869,25 +1040,31 @@ func _open_editor() -> void:
 	player_row.add_child(race_player_bar)
 	vbox.add_child(player_row)
 
-	var ai_row := HBoxContainer.new()
-	var ai_tag := Label.new()
-	ai_tag.text = "CodeBot-3000:"
-	ai_tag.add_theme_color_override("font_color", C_TEXT_DARK)
-	ai_tag.custom_minimum_size = Vector2(80, 0)
-	ai_row.add_child(ai_tag)
-	race_ai_bar = ProgressBar.new()
-	race_ai_bar.min_value = 0
-	race_ai_bar.max_value = race_code.length()
-	race_ai_bar.value = 0
-	race_ai_bar.custom_minimum_size = Vector2(600, 22)
-	var afill := StyleBoxFlat.new()
-	afill.bg_color = C_AI_BAR
-	race_ai_bar.add_theme_stylebox_override("fill", afill)
-	ai_row.add_child(race_ai_bar)
-	vbox.add_child(ai_row)
+	# A barra da IA só existe quando o dia realmente tem uma IA competindo
+	# (ai_active == true). No Dia 0 - treinamento ela ainda não foi
+	# contratada, então nem aparece: é só o jogador praticando sozinho.
+	if race_ai_active:
+		var ai_row := HBoxContainer.new()
+		var ai_tag := Label.new()
+		ai_tag.text = "%s:" % GameManager.AI_NAME
+		ai_tag.add_theme_color_override("font_color", C_TEXT_DARK)
+		ai_tag.custom_minimum_size = Vector2(80, 0)
+		ai_row.add_child(ai_tag)
+		race_ai_bar = ProgressBar.new()
+		race_ai_bar.min_value = 0
+		race_ai_bar.max_value = race_code.length()
+		race_ai_bar.value = 0
+		race_ai_bar.custom_minimum_size = Vector2(600, 22)
+		var afill := StyleBoxFlat.new()
+		afill.bg_color = C_AI_BAR
+		race_ai_bar.add_theme_stylebox_override("fill", afill)
+		ai_row.add_child(race_ai_bar)
+		vbox.add_child(ai_row)
+	else:
+		race_ai_bar = null
 
 	race_status_label = Label.new()
-	race_status_label.text = "Corrida em andamento..."
+	race_status_label.text = "Corrida em andamento..." if race_ai_active else "Treino livre — capriche com calma."
 	race_status_label.add_theme_color_override("font_color", C_TEXT_DARK)
 	vbox.add_child(race_status_label)
 
@@ -964,10 +1141,13 @@ func _finish_race(player_won: bool) -> void:
 	race_input.editable = false
 
 	if player_won:
-		race_status_label.text = "Você venceu a CodeBot-3000! 🎉"
+		if race_ai_active:
+			race_status_label.text = "Você venceu a %s! 🎉" % GameManager.AI_NAME
+		else:
+			race_status_label.text = "Exercício concluído! 🎉"
 		GameManager.register_win()
 	else:
-		race_status_label.text = "A CodeBot-3000 terminou primeiro..."
+		race_status_label.text = "A %s terminou primeiro..." % GameManager.AI_NAME
 		GameManager.register_loss()
 
 	var t := get_tree().create_timer(0.9)
@@ -1048,7 +1228,7 @@ func _show_result(player_won: bool) -> void:
 		btn.pressed.connect(func():
 			win.queue_free()
 			var cfg: Dictionary = GameManager.get_current_config()
-			_play_day_transition(cfg["title"], func():
+			_play_day_transition_for_cfg(cfg, func():
 				_build_desktop()
 			)
 		)
@@ -1089,7 +1269,7 @@ func _show_fired_screen() -> void:
 	vbox.add_child(title)
 
 	var sub := Label.new()
-	sub.text = "A CodeCorp decidiu seguir 100% com a CodeBot-3000.\nSeu crachá foi desativado."
+	sub.text = "A CodeCorp decidiu seguir 100%% com a %s.\nSeu crachá foi desativado." % GameManager.AI_NAME
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	sub.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
 	sub.custom_minimum_size = Vector2(520, 0)
@@ -1123,7 +1303,7 @@ func _show_victory_screen() -> void:
 	screen.add_child(vbox)
 
 	var title := Label.new()
-	title.text = "VOCÊ VENCEU A CODEBOT-3000!"
+	title.text = "VOCÊ VENCEU A %s!" % GameManager.AI_NAME
 	title.add_theme_font_size_override("font_size", 30)
 	title.add_theme_color_override("font_color", C_PLAYER_BAR)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
