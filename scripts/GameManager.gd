@@ -10,7 +10,7 @@ const MAX_LOSSES: int = 3
 
 var current_day: int = 1
 var total_losses: int = 0
-var email_read_today: bool = false
+var unread_email_count: int = 1
 
 # Cada entrada representa um dia de trabalho.
 # "code": o snippet que o jogador precisa digitar.
@@ -75,13 +75,17 @@ func get_current_config() -> Dictionary:
 	return day_configs[current_day - 1]
 
 
+func has_unread_email() -> bool:
+	return unread_email_count > 0
+
+
 func total_days() -> int:
 	return day_configs.size()
 
 
 func register_win() -> void:
 	current_day += 1
-	email_read_today = false
+	unread_email_count += 1
 	state_changed.emit()
 
 
@@ -101,5 +105,5 @@ func is_campaign_won() -> bool:
 func reset_game() -> void:
 	current_day = 1
 	total_losses = 0
-	email_read_today = false
+	unread_email_count = 1
 	state_changed.emit()

@@ -28,6 +28,15 @@ const C_AI_BAR := Color(0.85, 0.20, 0.20)
 const C_ERROR := Color(0.80, 0.10, 0.10)
 
 # ---------------------------------------------------------------------------
+# Som de notificação (aviso de nova mensagem)
+# ---------------------------------------------------------------------------
+# Coloque aqui o arquivo de som (.wav ou .ogg) que você quiser usar como
+# "pop" de notificação. Se o arquivo não existir ainda, o jogo simplesmente
+# não toca nada (sem erro) - é só trocar/adicionar o arquivo nesse caminho
+# quando tiver o som definitivo.
+const NOTIFICATION_SOUND_PATH := "res://assets/sfx/notification.wav"
+
+# ---------------------------------------------------------------------------
 # Fonte de código (JetBrains Mono Nerd Font, com fallback)
 # ---------------------------------------------------------------------------
 # Se um arquivo .ttf/.otf da JetBrains Mono Nerd Font for colocado nesse
@@ -52,6 +61,8 @@ var window_layer: Control
 var transition_layer: Control
 var taskbar_clock: Label
 var email_icon_flash: bool = false
+var email_badge: Control
+var _notification_player: AudioStreamPlayer
 
 # --- Variáveis da corrida (race) ---
 var race_code: String = ""
@@ -71,6 +82,8 @@ var race_active: bool = false
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	custom_minimum_size = Vector2(1280, 720)
+	_notification_player = AudioStreamPlayer.new()
+	add_child(_notification_player)
 	_build_monitor_frame()
 	_show_main_menu()
 
@@ -358,7 +371,11 @@ func _build_desktop() -> void:
 	desktop_layer.add_child(hud)
 
 	# Ícones do desktop
-	_add_desktop_icon(desktop_layer, Vector2(30, 60), "Outlook\nExpress", Color(0.95, 0.85, 0.2), true, _open_email)
+	email_badge = _add_desktop_icon(desktop_layer, Vector2(30, 60), "Outlook\nExpress", Color(0.95, 0.85, 0.2), true, _open_email)
+	if email_badge:
+		# A bolinha nasce escondida - só aparece com a animação/som depois de
+		# 1s, controlada por _schedule_email_notification() logo abaixo.
+		email_badge.visible = false
 	_add_desktop_icon(desktop_layer, Vector2(30, 170), "Editor de\nCódigo", Color(0.25, 0.55, 0.95), false, _try_open_editor)
 	_add_desktop_icon(desktop_layer, Vector2(30, 280), "Meu\nComputador", Color(0.8, 0.8, 0.85), false, func(): _show_toast("Nada de interessante por aqui..."))
 	_add_desktop_icon(desktop_layer, Vector2(30, 390), "Lixeira", Color(0.6, 0.6, 0.65), false, func(): _show_toast("A lixeira está vazia."))
@@ -371,8 +388,11 @@ func _build_desktop() -> void:
 
 	_build_taskbar()
 
+	if GameManager.has_unread_email():
+		_schedule_email_notification()
 
-func _add_desktop_icon(parent: Control, pos: Vector2, caption: String, tint: Color, notify: bool, on_activate: Callable) -> void:
+
+func _add_desktop_icon(parent: Control, pos: Vector2, caption: String, tint: Color, notify: bool, on_activate: Callable) -> Control:
 	var box := VBoxContainer.new()
 	box.position = pos
 	box.custom_minimum_size = Vector2(72, 84)
@@ -397,13 +417,14 @@ func _add_desktop_icon(parent: Control, pos: Vector2, caption: String, tint: Col
 	icon_panel.add_theme_stylebox_override("panel", sb)
 	box.add_child(icon_panel)
 
+	var badge_bg: Panel = null
 	if notify:
 		var badge := Label.new()
 		badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		badge.text = "!"
 		badge.add_theme_color_override("font_color", Color(1, 1, 1))
 		badge.add_theme_font_size_override("font_size", 14)
-		var badge_bg := Panel.new()
+		badge_bg = Panel.new()
 		badge_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var bsb := StyleBoxFlat.new()
 		bsb.bg_color = Color(0.9, 0.15, 0.15)
@@ -414,6 +435,7 @@ func _add_desktop_icon(parent: Control, pos: Vector2, caption: String, tint: Col
 		badge_bg.add_theme_stylebox_override("panel", bsb)
 		badge_bg.custom_minimum_size = Vector2(16, 16)
 		badge_bg.position = Vector2(34, -4)
+		badge_bg.pivot_offset = Vector2(8, 8)
 		badge_bg.add_child(badge)
 		icon_panel.add_child(badge_bg)
 
@@ -431,6 +453,7 @@ func _add_desktop_icon(parent: Control, pos: Vector2, caption: String, tint: Col
 	)
 
 	parent.add_child(box)
+	return badge_bg
 
 
 func _build_taskbar() -> void:
@@ -500,6 +523,99 @@ func _show_toast(msg: String) -> void:
 	window_layer.add_child(toast)
 	var t := get_tree().create_timer(1.8)
 	t.timeout.connect(func(): toast.queue_free())
+
+
+# ---------------------------------------------------------------------------
+# NOTIFICAÇÃO DE NOVA MENSAGEM (bolinha vermelha + som + aviso do "Bricks")
+# ---------------------------------------------------------------------------
+# 1s depois do desktop aparecer, se houver e-mail(s) não lido(s): toca um
+# som, anima a bolinha vermelha do ícone do Outlook Express surgindo, e
+# mostra um aviso no canto inferior direito (estilo balão de notificação),
+# tipo "Bricks - 1 nova mensagem" / "Bricks - 2 novas mensagens".
+func _schedule_email_notification() -> void:
+	var t := get_tree().create_timer(1.0)
+	t.timeout.connect(func():
+		if not is_instance_valid(email_badge):
+			return
+		_play_notification_sound()
+		_animate_email_badge_in()
+		_show_system_notification(GameManager.unread_email_count)
+	)
+
+
+func _play_notification_sound() -> void:
+	if ResourceLoader.exists(NOTIFICATION_SOUND_PATH):
+		_notification_player.stream = load(NOTIFICATION_SOUND_PATH)
+		_notification_player.play()
+	# Se o arquivo ainda não existir, simplesmente não toca nada - sem erro.
+	# Basta colocar um .wav/.ogg em NOTIFICATION_SOUND_PATH quando tiver o
+	# som definitivo.
+
+
+func _animate_email_badge_in() -> void:
+	email_badge.visible = true
+	email_badge.scale = Vector2(0.2, 0.2)
+	email_badge.modulate = Color(1, 1, 1, 0)
+	var tween := create_tween()
+	tween.set_trans(Tween.TRANS_BACK)
+	tween.set_ease(Tween.EASE_OUT)
+	tween.tween_property(email_badge, "scale", Vector2(1, 1), 0.35)
+	tween.parallel().tween_property(email_badge, "modulate:a", 1.0, 0.2)
+
+
+func _show_system_notification(unread_count: int) -> void:
+	var panel := Panel.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.97, 0.97, 0.95)
+	sb.border_width_left = 1
+	sb.border_width_right = 1
+	sb.border_width_top = 1
+	sb.border_width_bottom = 1
+	sb.border_color = C_TITLEBAR_A
+	sb.corner_radius_top_left = 6
+	sb.corner_radius_top_right = 6
+	sb.corner_radius_bottom_left = 6
+	sb.corner_radius_bottom_right = 6
+	sb.shadow_size = 6
+	sb.shadow_color = Color(0, 0, 0, 0.35)
+	panel.add_theme_stylebox_override("panel", sb)
+	panel.custom_minimum_size = Vector2(260, 64)
+	panel.size = Vector2(260, 64)
+	# Canto inferior direito, encostado logo acima da barra de tarefas.
+	panel.position = Vector2(screen.size.x - 260 - 16, screen.size.y - 64 - 36 - 12)
+	panel.modulate = Color(1, 1, 1, 0)
+	window_layer.add_child(panel)
+
+	var margin := MarginContainer.new()
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 10)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_right", 10)
+	margin.add_theme_constant_override("margin_bottom", 8)
+	panel.add_child(margin)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 2)
+	margin.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "Bricks"
+	title.add_theme_color_override("font_color", C_TITLEBAR_A)
+	title.add_theme_font_size_override("font_size", 14)
+	vbox.add_child(title)
+
+	var word_nova := "nova" if unread_count == 1 else "novas"
+	var word_msg := "mensagem" if unread_count == 1 else "mensagens"
+	var msg := Label.new()
+	msg.text = "%d %s %s" % [unread_count, word_nova, word_msg]
+	msg.add_theme_color_override("font_color", C_TEXT_DARK)
+	vbox.add_child(msg)
+
+	var tween := create_tween()
+	tween.tween_property(panel, "modulate:a", 1.0, 0.3)
+	tween.tween_interval(3.0)
+	tween.tween_property(panel, "modulate:a", 0.0, 0.5)
+	tween.tween_callback(panel.queue_free)
 
 
 # ---------------------------------------------------------------------------
@@ -621,7 +737,9 @@ func _open_email() -> void:
 
 	var win: Control = built["window"]
 	var close := func():
-		GameManager.email_read_today = true
+		GameManager.unread_email_count = 0
+		if is_instance_valid(email_badge):
+			email_badge.visible = false
 		win.queue_free()
 		state = State.DESKTOP
 	ok_btn.pressed.connect(close)
@@ -629,7 +747,7 @@ func _open_email() -> void:
 
 
 func _try_open_editor() -> void:
-	if not GameManager.email_read_today:
+	if GameManager.has_unread_email():
 		_show_toast("Leia o e-mail do chefe primeiro!")
 		return
 	_open_editor()
